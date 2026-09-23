@@ -1,17 +1,19 @@
 from datetime import datetime
 from typing import Any
 
+from agent.tools.contracts import ToolResult
 
-def calculator(expression: str) -> str:
+
+def calculator(expression: str) -> ToolResult:
     try:
         result = eval(expression, {"__builtins__": {}}, {})
-        return str(result)
+        return ToolResult.ok(str(result))
     except Exception as error:
-        return f"Erro ao calcular: {error}"
+        return ToolResult.failure(f"Erro ao calcular: {error}")
 
 
-def get_current_time() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def get_current_time() -> ToolResult:
+    return ToolResult.ok(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 TOOLS: list[dict[str, Any]] = [

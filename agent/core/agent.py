@@ -3,6 +3,7 @@ from typing import Any
 
 from agent.llm.client import LLMUnavailableError, LocalLLM
 from agent.tools.base import TOOLS
+from agent.tools.contracts import ToolResult
 from agent.tools.registry import get_tool
 
 MAX_ITERATIONS = 10
@@ -51,14 +52,14 @@ class Agent:
                     {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "content": result,
+                        "content": self._tool_result_content(result),
                     }
                 )
 
         return "O agente atingiu o limite máximo de iterações."
 
     @staticmethod
-    def _execute_tool(tool_call: Any) -> str:
+    def _execute_tool(tool_call: Any) -> ToolResult:
         tool_name = tool_call.function.name
         arguments = json.loads(tool_call.function.arguments)
         print(f"[TOOL] Ferramenta: {tool_name}")
@@ -66,13 +67,20 @@ class Agent:
 
         tool = get_tool(tool_name)
         if tool is None:
-            return f"Erro: ferramenta '{tool_name}' não encontrada."
+            return ToolResult.failure(f"Ferramenta '{tool_name}' não encontrada.")
 
         try:
             result = tool(**arguments)
-            print(f"[TOOL] Resultado: {result}")
-            return str(result)
         except Exception as error:
-            error_message = f"Erro ao executar a ferramenta '{tool_name}': {error}"
-            print(f"[TOOL] {error_message}")
-            return error_message
+            result = ToolResult.failure(
+                f"Erro ao executar a ferramenta '{tool_name}': {error}"
+            )
+
+        print(f"[TOOL] Resultado: {result}")
+        return result
+
+    @staticmethod
+    def _tool_result_content(result: ToolResult) -> str:
+        if result.success:
+            return str(result.data)
+        return f"Erro: {result.error or 'a ferramenta falhou.'}"
