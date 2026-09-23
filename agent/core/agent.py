@@ -5,6 +5,7 @@ from agent.llm.client import LLMUnavailableError, LocalLLM
 from agent.tools.base import TOOLS
 from agent.tools.contracts import ToolResult
 from agent.tools.registry import get_tool
+from agent.tools.validation import validate_tool_arguments
 
 MAX_ITERATIONS = 10
 
@@ -61,7 +62,11 @@ class Agent:
     @staticmethod
     def _execute_tool(tool_call: Any) -> ToolResult:
         tool_name = tool_call.function.name
-        arguments = json.loads(tool_call.function.arguments)
+        try:
+            arguments = json.loads(tool_call.function.arguments)
+        except json.JSONDecodeError as error:
+            return ToolResult.failure(f"Argumentos JSON inválidos: {error.msg}.")
+
         print(f"[TOOL] Ferramenta: {tool_name}")
         print(f"[TOOL] Argumentos: {arguments}")
 
@@ -69,8 +74,12 @@ class Agent:
         if tool is None:
             return ToolResult.failure(f"Ferramenta '{tool_name}' não encontrada.")
 
+        validation = validate_tool_arguments(tool_name, arguments)
+        if not validation.success:
+            return validation
+
         try:
-            result = tool(**arguments)
+            result = tool(**validation.data)
         except Exception as error:
             result = ToolResult.failure(
                 f"Erro ao executar a ferramenta '{tool_name}': {error}"

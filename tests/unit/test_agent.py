@@ -40,9 +40,10 @@ def test_agent_reports_llm_unavailable_and_remains_usable(capsys: Any) -> None:
 
 
 class ToolCallingLLM:
-    def __init__(self) -> None:
+    def __init__(self, arguments: str = '{"expression": "2 + 2"}') -> None:
         self.calls = 0
         self.messages_after_tool: list[dict[str, Any]] = []
+        self.arguments = arguments
 
     def chat(
         self,
@@ -55,7 +56,7 @@ class ToolCallingLLM:
                 id="call-1",
                 function=SimpleNamespace(
                     name="calculator",
-                    arguments='{"expression": "2 + 2"}',
+                    arguments=self.arguments,
                 ),
             )
             message = SimpleNamespace(tool_calls=[call], content=None)
@@ -104,3 +105,27 @@ def test_agent_converts_unexpected_tool_exception_and_sends_error_to_llm(
         "tool_call_id": "call-1",
         "content": "Erro: Erro ao executar a ferramenta 'calculator': unexpected failure",
     }
+
+
+def test_agent_does_not_execute_tool_with_invalid_arguments_and_sends_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = Agent()
+    fake_llm = ToolCallingLLM(arguments="{}")
+    agent.llm = fake_llm  # type: ignore[assignment]
+    executions: list[dict[str, Any]] = []
+
+    def tracked_tool(**kwargs: Any) -> ToolResult:
+        executions.append(kwargs)
+        return ToolResult.ok("should not run")
+
+    monkeypatch.setattr("agent.core.agent.get_tool", lambda name: tracked_tool)
+
+    response = agent.run("2 + 2")
+
+    assert response == "Done"
+    assert executions == []
+    tool_message = fake_llm.messages_after_tool[-1]
+    assert tool_message["role"] == "tool"
+    assert "Erro:" in tool_message["content"]
+    assert "expression" in tool_message["content"]
