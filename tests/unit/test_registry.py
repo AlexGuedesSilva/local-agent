@@ -1,0 +1,11 @@
+from agent.tools.base import calculator, get_current_time
+from agent.tools.registry import get_tool
+
+
+def test_get_tool_returns_registered_tools() -> None:
+    assert get_tool("calculator") is calculator
+    assert get_tool("get_current_time") is get_current_time
+
+
+def test_get_tool_returns_none_for_unknown_name() -> None:
+    assert get_tool("missing") is None
