@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any
 from types import SimpleNamespace
 
@@ -6,6 +7,7 @@ import pytest
 from agent.core.agent import Agent
 from agent.llm.client import LLMUnavailableError
 from agent.tools.contracts import ToolResult
+from agent.tools.registry import get_tool
 
 
 class UnavailableThenReadyLLM:
@@ -44,6 +46,7 @@ class ToolCallingLLM:
         self.calls = 0
         self.messages_after_tool: list[dict[str, Any]] = []
         self.arguments = arguments
+        self.tools_sent_to_llm: list[dict[str, Any]] | None = None
 
     def chat(
         self,
@@ -52,6 +55,7 @@ class ToolCallingLLM:
     ) -> Any:
         self.calls += 1
         if self.calls == 1:
+            self.tools_sent_to_llm = tools
             call = SimpleNamespace(
                 id="call-1",
                 function=SimpleNamespace(
@@ -66,18 +70,19 @@ class ToolCallingLLM:
         return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
 
-def test_agent_sends_successful_tool_result_to_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_agent_sends_successful_tool_result_to_llm() -> None:
     agent = Agent()
     fake_llm = ToolCallingLLM()
     agent.llm = fake_llm  # type: ignore[assignment]
-    monkeypatch.setattr(
-        "agent.core.agent.get_tool",
-        lambda name: lambda **kwargs: ToolResult.ok("4"),
-    )
 
     response = agent.run("2 + 2")
 
     assert response == "Done"
+    assert fake_llm.tools_sent_to_llm is not None
+    assert [tool["function"]["name"] for tool in fake_llm.tools_sent_to_llm] == [
+        "calculator",
+        "get_current_time",
+    ]
     assert fake_llm.messages_after_tool[-1] == {
         "role": "tool",
         "tool_call_id": "call-1",
@@ -95,7 +100,12 @@ def test_agent_converts_unexpected_tool_exception_and_sends_error_to_llm(
     def broken_tool(**kwargs: Any) -> ToolResult:
         raise RuntimeError("unexpected failure")
 
-    monkeypatch.setattr("agent.core.agent.get_tool", lambda name: broken_tool)
+    registered_tool = get_tool("calculator")
+    assert registered_tool is not None
+    monkeypatch.setattr(
+        "agent.core.agent.get_tool",
+        lambda name: replace(registered_tool, function=broken_tool),
+    )
 
     response = agent.run("2 + 2")
 
@@ -119,7 +129,12 @@ def test_agent_does_not_execute_tool_with_invalid_arguments_and_sends_failure(
         executions.append(kwargs)
         return ToolResult.ok("should not run")
 
-    monkeypatch.setattr("agent.core.agent.get_tool", lambda name: tracked_tool)
+    registered_tool = get_tool("calculator")
+    assert registered_tool is not None
+    monkeypatch.setattr(
+        "agent.core.agent.get_tool",
+        lambda name: replace(registered_tool, function=tracked_tool),
+    )
 
     response = agent.run("2 + 2")
 

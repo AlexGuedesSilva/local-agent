@@ -2,9 +2,8 @@ import json
 from typing import Any
 
 from agent.llm.client import LLMUnavailableError, LocalLLM
-from agent.tools.base import TOOLS
 from agent.tools.contracts import ToolResult
-from agent.tools.registry import get_tool
+from agent.tools.registry import get_tool, get_tools_for_llm
 from agent.tools.validation import validate_tool_arguments
 
 MAX_ITERATIONS = 10
@@ -35,7 +34,7 @@ class Agent:
             print(f"\n[AGENT] Iteração {iteration + 1}/{MAX_ITERATIONS}")
             print("[AGENT] Enviando mensagem para a LLM...")
             try:
-                response = self.llm.chat(messages=messages, tools=TOOLS)
+                response = self.llm.chat(messages=messages, tools=get_tools_for_llm())
             except LLMUnavailableError as error:
                 print(f"[LLM] {error}")
                 return str(error)
@@ -74,12 +73,12 @@ class Agent:
         if tool is None:
             return ToolResult.failure(f"Ferramenta '{tool_name}' não encontrada.")
 
-        validation = validate_tool_arguments(tool_name, arguments)
+        validation = validate_tool_arguments(tool, arguments)
         if not validation.success:
             return validation
 
         try:
-            result = tool(**validation.data)
+            result = tool.execute(**validation.data)
         except Exception as error:
             result = ToolResult.failure(
                 f"Erro ao executar a ferramenta '{tool_name}': {error}"

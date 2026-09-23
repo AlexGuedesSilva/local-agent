@@ -20,9 +20,12 @@ class ToolResult:
 
 
 class Tool(Protocol):
-    """Callable tool contract; registered names live in the registry keys."""
+    """Registered tool contract consumed by the registry and agent."""
 
-    @property
-    def __name__(self) -> str: ...
+    name: str
+    description: str
+    parameters: dict[str, Any]
 
-    def __call__(self, *args: Any, **kwargs: Any) -> ToolResult: ...
+    def execute(self, **arguments: Any) -> ToolResult: ...
+
+    def to_openai_tool(self) -> dict[str, Any]: ...

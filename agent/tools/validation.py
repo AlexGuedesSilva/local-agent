@@ -1,12 +1,6 @@
 from typing import Any
 
-from agent.tools.base import TOOLS
-from agent.tools.contracts import ToolResult
-
-_TOOL_PARAMETERS = {
-    definition["function"]["name"]: definition["function"]["parameters"]
-    for definition in TOOLS
-}
+from agent.tools.contracts import Tool, ToolResult
 _VALUE_TYPES: dict[str, type | tuple[type, ...]] = {
     "string": str,
     "integer": int,
@@ -17,16 +11,13 @@ _VALUE_TYPES: dict[str, type | tuple[type, ...]] = {
 }
 
 
-def validate_tool_arguments(tool_name: str, arguments: Any) -> ToolResult:
+def validate_tool_arguments(tool: Tool, arguments: Any) -> ToolResult:
     """Validate required, declared, and basic typed arguments for a tool."""
-    parameters = _TOOL_PARAMETERS.get(tool_name)
-    if parameters is None:
-        return ToolResult.failure(f"Definição da ferramenta '{tool_name}' não encontrada.")
     if not isinstance(arguments, dict):
         return ToolResult.failure("Os argumentos da ferramenta devem ser um objeto.")
 
-    properties = parameters.get("properties", {})
-    required = parameters.get("required", [])
+    properties = tool.parameters.get("properties", {})
+    required = tool.parameters.get("required", [])
 
     missing = [name for name in required if name not in arguments]
     if missing:
