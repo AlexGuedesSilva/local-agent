@@ -1,20 +1,25 @@
 from agent.tools.base import calculator, get_current_time
 from agent.tools.contracts import ToolResult
+from agent.tools.filesystem import list_directory
 from agent.tools.registry import get_tool, get_tools_for_llm
 
 
 def test_get_tool_returns_registered_tools() -> None:
     calculator_tool = get_tool("calculator")
     time_tool = get_tool("get_current_time")
+    filesystem_tool = get_tool("list_directory")
 
     assert calculator_tool is not None
     assert time_tool is not None
+    assert filesystem_tool is not None
     assert calculator_tool.name == "calculator"
     assert calculator_tool.function is calculator
     assert calculator_tool.execute(expression="2 + 2") == ToolResult.ok("4")
     assert time_tool.name == "get_current_time"
     assert time_tool.function is get_current_time
     assert time_tool.execute().success is True
+    assert filesystem_tool.name == "list_directory"
+    assert filesystem_tool.function is list_directory
 
 
 def test_get_tool_returns_none_for_unknown_name() -> None:
@@ -27,8 +32,12 @@ def test_registry_exposes_openai_compatible_tool_metadata() -> None:
     assert [item["function"]["name"] for item in tools] == [
         "calculator",
         "get_current_time",
+        "list_directory",
     ]
     calculator_schema = tools[0]["function"]["parameters"]
     assert calculator_schema["required"] == ["expression"]
     assert calculator_schema["properties"]["expression"]["type"] == "string"
     assert tools[1]["function"]["parameters"]["properties"] == {}
+    filesystem_schema = tools[2]["function"]["parameters"]
+    assert filesystem_schema["required"] == ["path"]
+    assert filesystem_schema["properties"]["path"]["type"] == "string"

@@ -24,7 +24,9 @@ class Agent:
                     "Quando precisar realizar cálculos matemáticos, "
                     "use a ferramenta calculator. "
                     "Quando o usuário perguntar a data ou hora atual, "
-                    "use a ferramenta get_current_time."
+                    "use a ferramenta get_current_time. "
+                    "Quando pedir para listar o conteúdo de um diretório, "
+                    "use a ferramenta list_directory com um caminho relativo ao workspace."
                 ),
             },
             {"role": "user", "content": user_input},

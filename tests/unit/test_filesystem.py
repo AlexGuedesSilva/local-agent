@@ -1,0 +1,141 @@
+from pathlib import Path
+
+import pytest
+
+from agent.tools.contracts import ToolResult
+from agent.tools.filesystem import list_directory
+
+
+def test_lists_workspace_root(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "notes.txt").write_text(
+        "temporary test content", encoding="utf-8"
+    )
+    (isolated_temp_dir / "project").mkdir()
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    result = list_directory(".")
+
+    assert result.success is True
+    assert "arquivo: notes.txt" in result.data
+    assert "diretório: project" in result.data
+
+
+def test_lists_valid_subdirectory(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = isolated_temp_dir / "project"
+    project.mkdir()
+    (project / "main.py").write_text("pass", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    result = list_directory("project")
+
+    assert result.success is True
+    assert result.data == "arquivo: main.py"
+
+
+def test_missing_directory_returns_failure(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    result = list_directory("missing")
+
+    assert result == ToolResult.failure("O diretório solicitado não existe.")
+
+
+def test_file_path_returns_failure(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "notes.txt").write_text("temporary", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    result = list_directory("notes.txt")
+
+    assert result.success is False
+    assert "não é um diretório" in (result.error or "")
+
+
+@pytest.mark.parametrize("path", ["..", "../outside", "nested/../../outside"])
+def test_parent_path_is_rejected_before_workspace_access(
+    path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_workspace_access() -> Path:
+        raise AssertionError("Workspace must not be accessed for parent paths")
+
+    monkeypatch.setattr("agent.tools.filesystem._workspace_root", unexpected_workspace_access)
+
+    result = list_directory(path)
+
+    assert result.success is False
+    assert ".." in (result.error or "")
+
+
+def test_windows_style_escape_is_rejected_before_workspace_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_workspace_access() -> Path:
+        raise AssertionError("Workspace must not be accessed for parent paths")
+
+    monkeypatch.setattr("agent.tools.filesystem._workspace_root", unexpected_workspace_access)
+
+    result = list_directory(r"..\..\outside")
+
+    assert result.success is False
+
+
+@pytest.mark.parametrize("path", ["C:\\Windows", r"\\server\share", "/etc"])
+def test_absolute_path_is_rejected_before_workspace_access(
+    path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_workspace_access() -> Path:
+        raise AssertionError("Workspace must not be accessed for absolute paths")
+
+    monkeypatch.setattr("agent.tools.filesystem._workspace_root", unexpected_workspace_access)
+
+    result = list_directory(path)
+
+    assert result.success is False
+    assert "relativo" in (result.error or "")
+
+
+def test_invalid_path_and_unexpected_filesystem_error_return_failure(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    assert list_directory("bad\x00path").success is False
+
+    def fail_to_list(self: Path):
+        raise PermissionError("test filesystem error")
+
+    monkeypatch.setattr(Path, "iterdir", fail_to_list)
+    result = list_directory(".")
+
+    assert result.success is False
+    assert "test filesystem error" in (result.error or "")
+
+
+def test_resolved_path_cannot_escape_workspace(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = isolated_temp_dir / "workspace"
+    outside = isolated_temp_dir / "outside"
+    workspace.mkdir()
+    outside.mkdir()
+    (outside / "secret.txt").write_text("temporary", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(workspace))
+    original_resolve = Path.resolve
+
+    def resolve_outside_link(path: Path, strict: bool = False) -> Path:
+        if path == workspace / "outside-link":
+            return outside
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_outside_link)
+
+    result = list_directory("outside-link")
+
+    assert result.success is False
+    assert "fora do workspace" in (result.error or "")

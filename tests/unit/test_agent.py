@@ -1,4 +1,5 @@
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 from types import SimpleNamespace
 
@@ -42,10 +43,15 @@ def test_agent_reports_llm_unavailable_and_remains_usable(capsys: Any) -> None:
 
 
 class ToolCallingLLM:
-    def __init__(self, arguments: str = '{"expression": "2 + 2"}') -> None:
+    def __init__(
+        self,
+        arguments: str = '{"expression": "2 + 2"}',
+        tool_name: str = "calculator",
+    ) -> None:
         self.calls = 0
         self.messages_after_tool: list[dict[str, Any]] = []
         self.arguments = arguments
+        self.tool_name = tool_name
         self.tools_sent_to_llm: list[dict[str, Any]] | None = None
 
     def chat(
@@ -59,7 +65,7 @@ class ToolCallingLLM:
             call = SimpleNamespace(
                 id="call-1",
                 function=SimpleNamespace(
-                    name="calculator",
+                    name=self.tool_name,
                     arguments=self.arguments,
                 ),
             )
@@ -82,6 +88,7 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
     assert [tool["function"]["name"] for tool in fake_llm.tools_sent_to_llm] == [
         "calculator",
         "get_current_time",
+        "list_directory",
     ]
     assert fake_llm.messages_after_tool[-1] == {
         "role": "tool",
@@ -144,3 +151,18 @@ def test_agent_does_not_execute_tool_with_invalid_arguments_and_sends_failure(
     assert tool_message["role"] == "tool"
     assert "Erro:" in tool_message["content"]
     assert "expression" in tool_message["content"]
+
+
+def test_agent_executes_list_directory_tool(
+    monkeypatch: pytest.MonkeyPatch, isolated_temp_dir: Path
+) -> None:
+    (isolated_temp_dir / "readme.txt").write_text("temporary", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    agent = Agent()
+    fake_llm = ToolCallingLLM(arguments='{"path": "."}', tool_name="list_directory")
+    agent.llm = fake_llm  # type: ignore[assignment]
+
+    response = agent.run("Liste os arquivos do diretório atual.")
+
+    assert response == "Done"
+    assert fake_llm.messages_after_tool[-1]["content"] == "arquivo: readme.txt"

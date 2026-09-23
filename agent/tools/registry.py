@@ -4,6 +4,7 @@ from typing import Any
 
 from agent.tools.base import calculator, get_current_time
 from agent.tools.contracts import Tool, ToolResult
+from agent.tools.filesystem import list_directory
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,24 @@ _TOOL_DEFINITIONS = (
         description="Retorna a data e hora atual da máquina onde o agente está executando.",
         parameters={"type": "object", "properties": {}},
         function=get_current_time,
+    ),
+    RegisteredTool(
+        name=list_directory.__name__,
+        description=(
+            "Lista arquivos, diretórios e links em um diretório relativo ao workspace permitido. "
+            "Não use caminhos absolutos nem '..'."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Caminho relativo ao workspace; use '.' para a raiz.",
+                }
+            },
+            "required": ["path"],
+        },
+        function=list_directory,
     ),
 )
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
