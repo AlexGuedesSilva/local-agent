@@ -29,7 +29,11 @@ class Agent:
                     "Quando o usuário perguntar a data ou hora atual, "
                     "use a ferramenta get_current_time. "
                     "Quando pedir para listar o conteúdo de um diretório, "
-                    "use a ferramenta list_directory com um caminho relativo ao workspace."
+                    "use a ferramenta list_directory com um caminho relativo ao workspace. "
+                    "Para localizar código, use search_workspace; para ler partes de um arquivo, "
+                    "use read_file com caminho relativo e, quando útil, intervalo de linhas. "
+                    "Para consultar dados, use query_database apenas com uma consulta SELECT ou WITH; "
+                    "não proponha comandos que alterem o banco."
                 ),
             },
             {"role": "user", "content": user_input},

@@ -4,7 +4,8 @@ from typing import Any
 
 from agent.tools.base import calculator, get_current_time
 from agent.tools.contracts import Tool, ToolResult
-from agent.tools.filesystem import list_directory, read_file
+from agent.tools.database import query_database
+from agent.tools.filesystem import list_directory, read_file, search_workspace
 
 
 @dataclass(frozen=True)
@@ -82,11 +83,52 @@ _TOOL_DEFINITIONS = (
                 "path": {
                     "type": "string",
                     "description": "Caminho relativo ao workspace do arquivo.",
-                }
+                },
+                "start_line": {
+                    "type": "integer",
+                    "description": "Primeira linha (base 1), padrão 1.",
+                },
+                "line_count": {
+                    "type": "integer",
+                    "description": "Quantidade de linhas, máximo 500; omitido lê o arquivo inteiro dentro do limite de bytes.",
+                },
             },
             "required": ["path"],
         },
         function=read_file,
+    ),
+    RegisteredTool(
+        name=search_workspace.__name__,
+        description=(
+            "Pesquisa texto literal sem diferenciar maiúsculas no conteúdo de arquivos UTF-8 "
+            "do workspace. Ignora diretórios ocultos e dependências; limite de resultados."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Texto a localizar."},
+                "path": {"type": "string", "description": "Diretório relativo inicial; padrão '.'."},
+                "file_pattern": {"type": "string", "description": "Padrão glob de nome, como '*.py'; padrão '*'."},
+                "max_results": {"type": "integer", "description": "Máximo de ocorrências, entre 1 e 200; padrão 50."},
+            },
+            "required": ["query"],
+        },
+        function=search_workspace,
+    ),
+    RegisteredTool(
+        name=query_database.__name__,
+        description=(
+            "Consulta o banco PostgreSQL configurado. Aceita somente uma consulta SELECT/WITH, "
+            "em transação read-only, com limite de tempo e quantidade de linhas."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Uma consulta PostgreSQL SELECT ou WITH."}
+            },
+            "required": ["query"],
+        },
+        function=query_database,
     ),
 )
 TOOL_REGISTRY: dict[str, RegisteredTool] = {

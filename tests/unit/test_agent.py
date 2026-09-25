@@ -108,6 +108,8 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
         "get_current_time",
         "list_directory",
         "read_file",
+        "search_workspace",
+        "query_database",
     ]
     assert fake_llm.messages_after_tool[-1] == {
         "role": "tool",

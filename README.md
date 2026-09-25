@@ -4,9 +4,11 @@ Agente local para desenvolvedores, escrito em Python. Ele conversa com um modelo
 
 ## Estado atual
 
-O projeto está em desenvolvimento inicial. O agente oferece um loop de tool calling e quatro ferramentas: calculadora aritmética, data/hora local, listagem de diretório e leitura de arquivo de texto UTF-8. A conversa não é persistida entre entradas.
+O projeto está em desenvolvimento inicial. O agente oferece um loop de tool calling e ferramentas para cálculos, data/hora local, listagem e busca de arquivos, leitura de arquivos por trechos e consulta a PostgreSQL. A conversa não é persistida entre entradas.
 
-As ferramentas de arquivos aceitam somente caminhos relativos ao workspace e rejeitam `..`, caminhos absolutos e destinos resolvidos fora do workspace. A leitura tem limite de tamanho. O agente ainda não grava arquivos nem executa comandos.
+As ferramentas de arquivos aceitam somente caminhos relativos ao workspace e rejeitam `..`, caminhos absolutos e destinos resolvidos fora do workspace. A leitura e a busca têm limites de tamanho/resultado. O agente ainda não grava arquivos nem executa comandos.
+
+A ferramenta PostgreSQL conecta-se ao servidor indicado em `POSTGRES_DSN`, que pode estar em outro computador — por exemplo, no PC que hospeda o LM Studio. Ela aceita uma única consulta `SELECT`/`WITH` dentro de uma transação read-only, com timeout e limite de linhas. Configure um usuário PostgreSQL dedicado com permissões apenas de leitura; a transação read-only é uma proteção adicional, não substitui privilégios mínimos.
 
 ## Estrutura
 
@@ -36,10 +38,15 @@ Copie `.env.example` para `.env` e ajuste os valores. Inicie o servidor local, c
 | `LLM_TEMPERATURE` | `0.2` | Temperatura enviada na chamada de chat. |
 | `LOCAL_AGENT_WORKSPACE` | `.` (raiz do projeto) | Raiz permitida para ferramentas de arquivos. Caminhos relativos são resolvidos a partir da raiz do projeto. |
 | `LOCAL_AGENT_MAX_FILE_BYTES` | `100000` | Tamanho máximo de arquivo que a ferramenta pode ler. |
+| `LOCAL_AGENT_MAX_SEARCH_BYTES` | `5000000` | Máximo de bytes lidos em uma busca no workspace. |
 | `LOCAL_AGENT_MAX_ITERATIONS` | `10` | Máximo de ciclos de resposta/chamadas de ferramenta por entrada. |
 | `LOCAL_AGENT_LOG_LEVEL` | `WARNING` | Nível de log (`DEBUG`, `INFO`, `WARNING` ou `ERROR`). |
+| `POSTGRES_DSN` | (vazio; integração desativada) | URI de conexão PostgreSQL, por exemplo `postgresql://usuario:senha@host:5432/banco`. Use o endereço/IP acessível do PC do banco. |
+| `POSTGRES_CONNECT_TIMEOUT_SECONDS` | `5` | Tempo máximo para estabelecer conexão. |
+| `POSTGRES_STATEMENT_TIMEOUT_MS` | `5000` | Tempo máximo de execução de cada consulta. |
+| `POSTGRES_MAX_ROWS` | `100` | Máximo de linhas retornadas, entre 1 e 500. |
 
-As variáveis numéricas devem conter números válidos; `LOCAL_AGENT_MAX_FILE_BYTES` precisa ser maior que zero.
+As variáveis numéricas devem conter números válidos; `LOCAL_AGENT_MAX_FILE_BYTES` precisa ser maior que zero. O PostgreSQL permanece desativado se `POSTGRES_DSN` estiver vazio.
 
 ## Uso
 
@@ -53,7 +60,7 @@ Digite `sair` para encerrar. Os logs são enviados ao console conforme `LOCAL_AG
 
 ## Segurança e escopo
 
-A calculadora interpreta uma lista restrita de operações aritméticas por meio de uma árvore sintática; não executa Python arbitrário. A leitura de arquivos é somente leitura, limitada ao workspace, a UTF-8 e ao tamanho configurado. Links simbólicos cujo destino fique fora do workspace são rejeitados.
+A calculadora interpreta uma lista restrita de operações aritméticas por meio de uma árvore sintática; não executa Python arbitrário. A leitura e busca de arquivos são somente leitura, limitadas ao workspace e ao tamanho/quantidade configurados. Links simbólicos cujo destino fique fora do workspace são rejeitados. O agente não abre portas no computador do banco: ele inicia uma conexão de saída ao host e à porta informados no DSN. O servidor PostgreSQL precisa aceitar conexões desse host, com regras de rede e autenticação apropriadas.
 
 Escrita de arquivos e execução de comandos não estão implementadas. Se forem adicionadas no futuro, devem ter escopo explícito e pedir confirmação do usuário antes de alterar o projeto ou iniciar processos.
 

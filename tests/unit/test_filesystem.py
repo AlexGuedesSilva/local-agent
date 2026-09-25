@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from agent.tools.contracts import ToolResult
-from agent.tools.filesystem import list_directory, read_file
+from agent.tools.filesystem import list_directory, read_file, search_workspace
 
 
 def test_lists_workspace_root(
@@ -183,3 +183,37 @@ def test_read_file_rejects_non_utf8_files(
 
     assert result.success is False
     assert "UTF-8" in (result.error or "")
+
+
+def test_read_file_returns_requested_line_range(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "source.py").write_text("uno\ndos\ntres\ncuatro", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    assert read_file("source.py", start_line=2, line_count=2) == ToolResult.ok("dos\ntres")
+
+
+def test_search_workspace_finds_literal_matches_and_skips_dependencies(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "src").mkdir()
+    (isolated_temp_dir / "src" / "app.py").write_text("def Greeting():\n    pass\n", encoding="utf-8")
+    (isolated_temp_dir / "node_modules").mkdir()
+    (isolated_temp_dir / "node_modules" / "vendor.py").write_text("Greeting", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    result = search_workspace("greeting", file_pattern="*.py")
+
+    assert result.success is True
+    assert result.data == "src/app.py:1: def Greeting()"
+
+
+def test_search_workspace_rejects_escape_paths(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    result = search_workspace("needle", path="../")
+
+    assert result.success is False
