@@ -4,11 +4,13 @@ Agente local para desenvolvedores, escrito em Python. Ele conversa com um modelo
 
 ## Estado atual
 
-O projeto está em desenvolvimento inicial. O agente oferece um loop de tool calling e ferramentas para cálculos, data/hora local, listagem e busca de arquivos, leitura de arquivos por trechos e consulta a PostgreSQL. A conversa não é persistida entre entradas.
+O projeto está em desenvolvimento inicial. O agente oferece um loop de tool calling e ferramentas para cálculos, data/hora local, listagem e busca de arquivos, leitura de arquivos por trechos, consulta a PostgreSQL e movimentação/renomeação de itens do workspace. A conversa não é persistida entre entradas.
 
-As ferramentas de arquivos aceitam somente caminhos relativos ao workspace e rejeitam `..`, caminhos absolutos e destinos resolvidos fora do workspace. A leitura e a busca têm limites de tamanho/resultado. O agente ainda não grava arquivos nem executa comandos.
+As ferramentas de arquivos aceitam somente caminhos relativos ao workspace e rejeitam `..`, caminhos absolutos e destinos resolvidos fora do workspace. A leitura e a busca têm limites de tamanho/resultado. O agente pode mover/renomear itens após confirmação; ainda não edita conteúdo nem executa comandos.
 
 A ferramenta PostgreSQL conecta-se ao servidor indicado em `POSTGRES_DSN`, que pode estar em outro computador — por exemplo, no PC que hospeda o LM Studio. Ela aceita uma única consulta `SELECT`/`WITH` dentro de uma transação read-only, com timeout e limite de linhas. Configure um usuário PostgreSQL dedicado com permissões apenas de leitura; a transação read-only é uma proteção adicional, não substitui privilégios mínimos.
+
+A ferramenta `move_path` pode mover ou renomear arquivos e diretórios dentro do workspace. No terminal, o agente mostra origem e destino e exige que o usuário digite `s` para confirmar. Destinos existentes, links simbólicos e caminhos fora do workspace são recusados. A ferramenta não copia nem exclui itens.
 
 ## Estrutura
 
@@ -62,7 +64,7 @@ Digite `sair` para encerrar. Os logs são enviados ao console conforme `LOCAL_AG
 
 A calculadora interpreta uma lista restrita de operações aritméticas por meio de uma árvore sintática; não executa Python arbitrário. A leitura e busca de arquivos são somente leitura, limitadas ao workspace e ao tamanho/quantidade configurados. Links simbólicos cujo destino fique fora do workspace são rejeitados. O agente não abre portas no computador do banco: ele inicia uma conexão de saída ao host e à porta informados no DSN. O servidor PostgreSQL precisa aceitar conexões desse host, com regras de rede e autenticação apropriadas.
 
-Escrita de arquivos e execução de comandos não estão implementadas. Se forem adicionadas no futuro, devem ter escopo explícito e pedir confirmação do usuário antes de alterar o projeto ou iniciar processos.
+Edição do conteúdo de arquivos e execução de comandos não estão implementadas. Se forem adicionadas no futuro, devem ter escopo explícito e pedir confirmação do usuário antes de alterar o projeto ou iniciar processos.
 
 ## Testes
 

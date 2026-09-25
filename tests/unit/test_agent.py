@@ -28,17 +28,16 @@ class UnavailableThenReadyLLM:
         return type("Response", (), {"choices": [choice]})()
 
 
-def test_agent_reports_llm_unavailable_and_remains_usable(capsys: Any) -> None:
+def test_agent_reports_llm_unavailable_and_remains_usable(caplog: pytest.LogCaptureFixture) -> None:
     agent = Agent()
     fake = UnavailableThenReadyLLM()
     agent.llm = fake  # type: ignore[assignment]
 
     unavailable = agent.run("Olá")
-    printed = capsys.readouterr().out
     recovered = agent.run("Tente novamente")
 
     assert "indisponível" in unavailable
-    assert "indisponível" in printed
+    assert "LLM indisponível" in caplog.text
     assert recovered == "Resposta disponível."
 
 
@@ -110,6 +109,7 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
         "read_file",
         "search_workspace",
         "query_database",
+        "move_path",
     ]
     assert fake_llm.messages_after_tool[-1] == {
         "role": "tool",
@@ -141,7 +141,7 @@ def test_agent_converts_unexpected_tool_exception_and_sends_error_to_llm(
     assert fake_llm.messages_after_tool[-1] == {
         "role": "tool",
         "tool_call_id": "call-1",
-        "content": "Erro: Erro ao executar a ferramenta 'calculator': unexpected failure",
+        "content": "Erro: Erro ao executar a ferramenta 'calculator'.",
     }
 
 
@@ -187,3 +187,44 @@ def test_agent_executes_list_directory_tool(
 
     assert response == "Done"
     assert fake_llm.messages_after_tool[-1]["content"] == "arquivo: readme.txt"
+
+
+def test_agent_requires_confirmation_before_moving_path(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "inbox").mkdir()
+    (isolated_temp_dir / "inbox" / "note.txt").write_text("hello", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    confirmations: list[str] = []
+    agent = Agent(confirm_action=lambda description: confirmations.append(description) or True)
+    fake_llm = ToolCallingLLM(
+        arguments='{"source": "inbox/note.txt", "destination": "note.txt"}',
+        tool_name="move_path",
+    )
+    agent.llm = fake_llm  # type: ignore[assignment]
+
+    response = agent.run("Mova minha anotação para a raiz.")
+
+    assert response == "Done"
+    assert confirmations == ["Mover 'inbox/note.txt' para 'note.txt' dentro do workspace"]
+    assert (isolated_temp_dir / "note.txt").exists()
+
+
+def test_agent_cancels_move_when_confirmation_is_denied(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "note.txt").write_text("hello", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    agent = Agent(confirm_action=lambda _description: False)
+    fake_llm = ToolCallingLLM(
+        arguments='{"source": "note.txt", "destination": "moved.txt"}',
+        tool_name="move_path",
+    )
+    agent.llm = fake_llm  # type: ignore[assignment]
+
+    response = agent.run("Mova o arquivo.")
+
+    assert response == "Done"
+    assert (isolated_temp_dir / "note.txt").exists()
+    assert not (isolated_temp_dir / "moved.txt").exists()
+    assert "cancelada" in fake_llm.messages_after_tool[-1]["content"]

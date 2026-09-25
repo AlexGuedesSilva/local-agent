@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from agent.tools.contracts import ToolResult
-from agent.tools.filesystem import list_directory, read_file, search_workspace
+from agent.tools.filesystem import list_directory, move_path, read_file, search_workspace
 
 
 def test_lists_workspace_root(
@@ -206,7 +206,7 @@ def test_search_workspace_finds_literal_matches_and_skips_dependencies(
     result = search_workspace("greeting", file_pattern="*.py")
 
     assert result.success is True
-    assert result.data == "src/app.py:1: def Greeting()"
+    assert result.data == "src/app.py:1: def Greeting():"
 
 
 def test_search_workspace_rejects_escape_paths(
@@ -217,3 +217,33 @@ def test_search_workspace_rejects_escape_paths(
     result = search_workspace("needle", path="../")
 
     assert result.success is False
+
+
+def test_move_path_moves_file_inside_workspace(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "inbox").mkdir()
+    (isolated_temp_dir / "inbox" / "note.txt").write_text("hello", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    result = move_path("inbox/note.txt", "note.txt")
+
+    assert result.success is True
+    assert (isolated_temp_dir / "note.txt").read_text(encoding="utf-8") == "hello"
+    assert not (isolated_temp_dir / "inbox" / "note.txt").exists()
+
+
+def test_move_path_refuses_existing_destination_and_escape(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "source.txt").write_text("source", encoding="utf-8")
+    (isolated_temp_dir / "existing.txt").write_text("keep", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    collision = move_path("source.txt", "existing.txt")
+    escape = move_path("source.txt", "../outside.txt")
+
+    assert collision.success is False
+    assert (isolated_temp_dir / "existing.txt").read_text(encoding="utf-8") == "keep"
+    assert escape.success is False
+    assert (isolated_temp_dir / "source.txt").exists()
