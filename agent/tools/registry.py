@@ -5,7 +5,7 @@ from typing import Any
 from agent.tools.base import calculator, get_current_time
 from agent.tools.contracts import Tool, ToolResult
 from agent.tools.database import query_database
-from agent.tools.filesystem import list_directory, read_file, search_workspace
+from agent.tools.filesystem import list_directory, move_path, read_file, search_workspace
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class RegisteredTool:
     description: str
     parameters: dict[str, Any]
     function: Callable[..., ToolResult]
+    requires_confirmation: bool = False
 
     def execute(self, **arguments: Any) -> ToolResult:
         return self.function(**arguments)
@@ -129,6 +130,24 @@ _TOOL_DEFINITIONS = (
             "required": ["query"],
         },
         function=query_database,
+    ),
+    RegisteredTool(
+        name=move_path.__name__,
+        description=(
+            "Move ou renomeia um arquivo ou diretório dentro do workspace. "
+            "O agente apresentará a origem e o destino e pedirá confirmação antes de aplicar. "
+            "Não sobrescreve destinos existentes."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Caminho relativo atual."},
+                "destination": {"type": "string", "description": "Novo caminho relativo; a pasta de destino deve existir."},
+            },
+            "required": ["source", "destination"],
+        },
+        function=move_path,
+        requires_confirmation=True,
     ),
 )
 TOOL_REGISTRY: dict[str, RegisteredTool] = {

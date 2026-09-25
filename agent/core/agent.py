@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from collections.abc import Callable
 from typing import Any
 
 from agent.llm.client import LLMUnavailableError, LocalLLM
@@ -15,8 +16,9 @@ MAX_ITERATIONS = int(os.getenv("LOCAL_AGENT_MAX_ITERATIONS", "10"))
 class Agent:
     """Coordinate model responses and registered tool calls."""
 
-    def __init__(self) -> None:
+    def __init__(self, confirm_action: Callable[[str], bool] | None = None) -> None:
         self.llm = LocalLLM()
+        self.confirm_action = confirm_action or (lambda _description: False)
 
     def run(self, user_input: str) -> str:
         messages: list[dict[str, Any]] = [
@@ -34,6 +36,9 @@ class Agent:
                     "use read_file com caminho relativo e, quando útil, intervalo de linhas. "
                     "Para consultar dados, use query_database apenas com uma consulta SELECT ou WITH; "
                     "não proponha comandos que alterem o banco."
+                    " Para mover ou renomear itens, chame move_path; a aplicação exigirá "
+                    "confirmação explícita e não sobrescreverá destinos existentes. "
+                    "Só diga que uma ação foi concluída se a ferramenta confirmar sucesso."
                 ),
             },
             {"role": "user", "content": user_input},
@@ -76,8 +81,7 @@ class Agent:
         logger.warning("Agente atingiu limite de %s iterações", MAX_ITERATIONS)
         return "O agente atingiu o limite máximo de iterações."
 
-    @staticmethod
-    def _execute_tool(tool_call: Any) -> ToolResult:
+    def _execute_tool(self, tool_call: Any) -> ToolResult:
         try:
             tool_name = tool_call.function.name
             raw_arguments = tool_call.function.arguments
@@ -99,6 +103,18 @@ class Agent:
         validation = validate_tool_arguments(tool, arguments)
         if not validation.success:
             return validation
+
+        if getattr(tool, "requires_confirmation", False):
+            description = (
+                f"Mover '{validation.data['source']}' para "
+                f"'{validation.data['destination']}' dentro do workspace"
+            )
+            try:
+                if not self.confirm_action(description):
+                    return ToolResult.failure("Ação cancelada ou não autorizada pelo usuário.")
+            except (EOFError, KeyboardInterrupt):
+                logger.info("Confirmação de ação interrompida pelo usuário")
+                return ToolResult.failure("Ação cancelada pelo usuário.")
 
         try:
             result = tool.execute(**validation.data)

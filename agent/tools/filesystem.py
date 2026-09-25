@@ -38,6 +38,17 @@ def _is_absolute_or_has_parent(path: str) -> bool:
     return is_absolute or has_parent
 
 
+def _has_symlink_component(workspace: Path, relative_path: Path) -> bool:
+    current = workspace
+    for part in relative_path.parts:
+        if part in ("", "."):
+            continue
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
 def list_directory(path: str) -> ToolResult:
     """List names and entry types in a directory inside the configured workspace."""
     if not isinstance(path, str) or not path or "\x00" in path:
@@ -200,3 +211,49 @@ def search_workspace(
         return ToolResult.failure("O diretório solicitado não existe.")
     except (OSError, RuntimeError, ValueError) as error:
         return ToolResult.failure(f"Não foi possível pesquisar o workspace: {error}")
+
+
+def move_path(source: str, destination: str) -> ToolResult:
+    """Move a file or directory between paths contained in the workspace."""
+    for candidate in (source, destination):
+        if (
+            not isinstance(candidate, str)
+            or not candidate
+            or "\x00" in candidate
+            or _is_absolute_or_has_parent(candidate)
+        ):
+            return ToolResult.failure("Use caminhos relativos ao workspace, sem '..'.")
+    try:
+        workspace = _workspace_root()
+        source_path = workspace / Path(source)
+        if _has_symlink_component(workspace, Path(source)):
+            return ToolResult.failure("Mover links simbólicos não é permitido.")
+        resolved_source = source_path.resolve(strict=True)
+        if not resolved_source.is_relative_to(workspace):
+            return ToolResult.failure("A origem está fora do workspace.")
+        if resolved_source == workspace:
+            return ToolResult.failure("Não é permitido mover a raiz do workspace.")
+
+        destination_path = workspace / Path(destination)
+        if _has_symlink_component(workspace, Path(destination).parent):
+            return ToolResult.failure("Usar links simbólicos no caminho de destino não é permitido.")
+        destination_parent = destination_path.parent.resolve(strict=True)
+        if not destination_parent.is_relative_to(workspace):
+            return ToolResult.failure("O destino está fora do workspace.")
+        resolved_destination = destination_parent / destination_path.name
+        if resolved_destination == resolved_source:
+            return ToolResult.failure("A origem e o destino são iguais.")
+        if resolved_destination.exists():
+            return ToolResult.failure("O destino já existe; nenhum arquivo foi sobrescrito.")
+        if resolved_source.is_dir() and resolved_destination.is_relative_to(resolved_source):
+            return ToolResult.failure("Não é permitido mover uma pasta para dentro dela mesma.")
+
+        resolved_source.rename(resolved_destination)
+        return ToolResult.ok(
+            f"Movido: {resolved_source.relative_to(workspace).as_posix()} -> "
+            f"{resolved_destination.relative_to(workspace).as_posix()}"
+        )
+    except FileNotFoundError:
+        return ToolResult.failure("A origem ou a pasta de destino não existe.")
+    except (OSError, RuntimeError, ValueError) as error:
+        return ToolResult.failure(f"Não foi possível mover o item: {error}")
