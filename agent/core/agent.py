@@ -1,4 +1,6 @@
 import json
+import logging
+import os
 from typing import Any
 
 from agent.llm.client import LLMUnavailableError, LocalLLM
@@ -6,7 +8,8 @@ from agent.tools.contracts import ToolResult
 from agent.tools.registry import get_tool, get_tools_for_llm
 from agent.tools.validation import validate_tool_arguments
 
-MAX_ITERATIONS = 10
+logger = logging.getLogger(__name__)
+MAX_ITERATIONS = int(os.getenv("LOCAL_AGENT_MAX_ITERATIONS", "10"))
 
 
 class Agent:
@@ -33,20 +36,28 @@ class Agent:
         ]
 
         for iteration in range(MAX_ITERATIONS):
-            print(f"\n[AGENT] Iteração {iteration + 1}/{MAX_ITERATIONS}")
-            print("[AGENT] Enviando mensagem para a LLM...")
+            logger.debug("Iteração %s/%s", iteration + 1, MAX_ITERATIONS)
             try:
                 response = self.llm.chat(messages=messages, tools=get_tools_for_llm())
             except LLMUnavailableError as error:
-                print(f"[LLM] {error}")
+                logger.warning("LLM indisponível: %s", error)
                 return str(error)
-            message = response.choices[0].message
+            except Exception:
+                logger.exception("Falha inesperada ao consultar a LLM")
+                return "Ocorreu um erro inesperado ao consultar o modelo local. Consulte os logs."
+
+            try:
+                message = response.choices[0].message
+            except (AttributeError, IndexError, TypeError):
+                logger.exception("Resposta LLM em formato inesperado")
+                return "O modelo local retornou uma resposta em formato inesperado."
 
             if not message.tool_calls:
-                print("[AGENT] A LLM não solicitou ferramentas.\n")
-                return message.content
+                if isinstance(message.content, str) and message.content.strip():
+                    return message.content
+                logger.warning("Resposta LLM sem conteúdo e sem chamadas de ferramenta")
+                return "O modelo local retornou uma resposta vazia. Tente novamente."
 
-            print("[LLM] A LLM solicitou ferramenta(s).\n")
             messages.append(message)
             for tool_call in message.tool_calls:
                 result = self._execute_tool(tool_call)
@@ -58,18 +69,24 @@ class Agent:
                     }
                 )
 
+        logger.warning("Agente atingiu limite de %s iterações", MAX_ITERATIONS)
         return "O agente atingiu o limite máximo de iterações."
 
     @staticmethod
     def _execute_tool(tool_call: Any) -> ToolResult:
-        tool_name = tool_call.function.name
         try:
-            arguments = json.loads(tool_call.function.arguments)
-        except json.JSONDecodeError as error:
-            return ToolResult.failure(f"Argumentos JSON inválidos: {error.msg}.")
+            tool_name = tool_call.function.name
+            raw_arguments = tool_call.function.arguments
+        except (AttributeError, TypeError):
+            logger.warning("A LLM retornou uma chamada de ferramenta malformada")
+            return ToolResult.failure("Chamada de ferramenta malformada.")
+        try:
+            arguments = json.loads(raw_arguments)
+        except (json.JSONDecodeError, TypeError) as error:
+            detail = error.msg if isinstance(error, json.JSONDecodeError) else "formato inválido"
+            return ToolResult.failure(f"Argumentos JSON inválidos: {detail}.")
 
-        print(f"[TOOL] Ferramenta: {tool_name}")
-        print(f"[TOOL] Argumentos: {arguments}")
+        logger.info("Executando ferramenta %s", tool_name)
 
         tool = get_tool(tool_name)
         if tool is None:
@@ -82,11 +99,12 @@ class Agent:
         try:
             result = tool.execute(**validation.data)
         except Exception as error:
+            logger.exception("Falha ao executar ferramenta %s", tool_name)
             result = ToolResult.failure(
-                f"Erro ao executar a ferramenta '{tool_name}': {error}"
+                f"Erro ao executar a ferramenta '{tool_name}'."
             )
 
-        print(f"[TOOL] Resultado: {result}")
+        logger.debug("Ferramenta %s concluída (success=%s)", tool_name, result.success)
         return result
 
     @staticmethod

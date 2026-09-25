@@ -1,7 +1,14 @@
+import logging
+import os
+
 from agent.core.agent import Agent
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=os.getenv("LOCAL_AGENT_LOG_LEVEL", "WARNING").upper(),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     agent = Agent()
 
     print("=================================")

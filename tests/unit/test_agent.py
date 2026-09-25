@@ -42,6 +42,24 @@ def test_agent_reports_llm_unavailable_and_remains_usable(capsys: Any) -> None:
     assert recovered == "Resposta disponível."
 
 
+def test_agent_handles_empty_model_response() -> None:
+    agent = Agent()
+
+    class EmptyLLM:
+        def chat(
+            self,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+        ) -> Any:
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=None, content=None))]
+            )
+
+    agent.llm = EmptyLLM()  # type: ignore[assignment]
+
+    assert "resposta vazia" in agent.run("Olá")
+
+
 class ToolCallingLLM:
     def __init__(
         self,
@@ -89,6 +107,7 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
         "calculator",
         "get_current_time",
         "list_directory",
+        "read_file",
     ]
     assert fake_llm.messages_after_tool[-1] == {
         "role": "tool",

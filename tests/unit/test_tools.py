@@ -1,4 +1,5 @@
 from datetime import datetime
+import pytest
 
 from agent.tools.base import calculator, get_current_time
 from agent.tools.contracts import ToolResult
@@ -16,6 +17,21 @@ def test_calculator_reports_invalid_expression() -> None:
     assert result.success is False
     assert result.error is not None
     assert result.error.startswith("Erro ao calcular:")
+
+
+@pytest.mark.parametrize(
+    "expression",
+    ["__import__('os').getcwd()", "2 ** 1000000", "2 +", ""],
+)
+def test_calculator_rejects_unsafe_or_unbounded_expressions(expression: str) -> None:
+    result = calculator(expression)
+
+    assert result.success is False
+    assert result.error is not None
+
+
+def test_calculator_supports_parentheses_and_unary_operators() -> None:
+    assert calculator("-(2 + 3) * 4") == ToolResult.ok("-20")
 
 
 def test_get_current_time_matches_expected_format() -> None:

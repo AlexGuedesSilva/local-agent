@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from agent.tools.contracts import ToolResult
-from agent.tools.filesystem import list_directory
+from agent.tools.filesystem import list_directory, read_file
 
 
 def test_lists_workspace_root(
@@ -139,3 +139,47 @@ def test_resolved_path_cannot_escape_workspace(
 
     assert result.success is False
     assert "fora do workspace" in (result.error or "")
+
+
+def test_reads_utf8_file_inside_workspace(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "source.py").write_text("print('olá')", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    assert read_file("source.py") == ToolResult.ok("print('olá')")
+
+
+def test_read_file_rejects_parent_paths_and_directories(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "folder").mkdir()
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    assert read_file("../outside").success is False
+    assert "não é um arquivo" in (read_file("folder").error or "")
+
+
+def test_read_file_enforces_configured_size_limit(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "large.txt").write_text("12345", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    monkeypatch.setenv("LOCAL_AGENT_MAX_FILE_BYTES", "4")
+
+    result = read_file("large.txt")
+
+    assert result.success is False
+    assert "limite" in (result.error or "")
+
+
+def test_read_file_rejects_non_utf8_files(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "binary.dat").write_bytes(b"\xff\xfe")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    result = read_file("binary.dat")
+
+    assert result.success is False
+    assert "UTF-8" in (result.error or "")

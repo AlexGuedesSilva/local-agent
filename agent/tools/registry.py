@@ -4,7 +4,7 @@ from typing import Any
 
 from agent.tools.base import calculator, get_current_time
 from agent.tools.contracts import Tool, ToolResult
-from agent.tools.filesystem import list_directory
+from agent.tools.filesystem import list_directory, read_file
 
 
 @dataclass(frozen=True)
@@ -69,6 +69,24 @@ _TOOL_DEFINITIONS = (
             "required": ["path"],
         },
         function=list_directory,
+    ),
+    RegisteredTool(
+        name=read_file.__name__,
+        description=(
+            "Lê o conteúdo de um arquivo de texto UTF-8 dentro do workspace permitido. "
+            "Há um limite configurável de tamanho; não use caminhos absolutos nem '..'."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Caminho relativo ao workspace do arquivo.",
+                }
+            },
+            "required": ["path"],
+        },
+        function=read_file,
     ),
 )
 TOOL_REGISTRY: dict[str, RegisteredTool] = {
