@@ -4,6 +4,7 @@ from agent.tools.filesystem import list_directory, move_path, read_file, search_
 from agent.tools.filesystem import edit_file
 from agent.tools.commands import run_command
 from agent.tools.conversations import search_conversations
+from agent.tools.project_checks import run_project_check
 from agent.tools.database import query_database
 from agent.tools.registry import get_tool, get_tools_for_llm
 
@@ -19,6 +20,7 @@ def test_get_tool_returns_registered_tools() -> None:
     edit_tool = get_tool("edit_file")
     command_tool = get_tool("run_command")
     conversations_tool = get_tool("search_conversations")
+    project_check_tool = get_tool("run_project_check")
 
     assert calculator_tool is not None
     assert time_tool is not None
@@ -50,6 +52,10 @@ def test_get_tool_returns_registered_tools() -> None:
     assert conversations_tool is not None
     assert conversations_tool.function is search_conversations
     assert conversations_tool.requires_confirmation is False
+    assert project_check_tool is not None
+    assert project_check_tool.function is run_project_check
+    assert project_check_tool.requires_confirmation is True
+    assert project_check_tool.confirmation_preview is not None
 
 
 def test_get_tool_returns_none_for_unknown_name() -> None:
@@ -70,6 +76,7 @@ def test_registry_exposes_openai_compatible_tool_metadata() -> None:
         "edit_file",
         "move_path",
         "run_command",
+        "run_project_check",
         "search_web",
         "read_webpage",
     ]
@@ -87,5 +94,6 @@ def test_registry_exposes_openai_compatible_tool_metadata() -> None:
     assert tools[7]["function"]["parameters"]["required"] == ["path", "old_text", "new_text"]
     assert tools[8]["function"]["parameters"]["required"] == ["source", "destination"]
     assert tools[9]["function"]["parameters"]["required"] == ["argv"]
-    assert tools[10]["function"]["parameters"]["required"] == ["query"]
-    assert tools[11]["function"]["parameters"]["required"] == ["url"]
+    assert tools[10]["function"]["parameters"]["required"] == ["check_name"]
+    assert tools[11]["function"]["parameters"]["required"] == ["query"]
+    assert tools[12]["function"]["parameters"]["required"] == ["url"]

@@ -1,0 +1,6 @@
+{
+  "name": "local-agent",
+  "checks": {
+    "test": ["python", "-m", "pytest"]
+  }
+}
