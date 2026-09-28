@@ -2,6 +2,7 @@ import ast
 import math
 import operator
 from datetime import datetime
+from typing import TypeAlias
 from agent.tools.contracts import ToolResult
 
 
@@ -15,9 +16,10 @@ _BINARY_OPERATORS = {
     ast.Pow: operator.pow,
 }
 _UNARY_OPERATORS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+Numeric: TypeAlias = int | float
 
 
-def _evaluate_expression(node: ast.AST) -> int | float:
+def _evaluate_expression(node: ast.AST) -> Numeric:
     if isinstance(node, ast.Constant) and type(node.value) in (int, float):
         return node.value
     if isinstance(node, ast.BinOp) and type(node.op) in _BINARY_OPERATORS:

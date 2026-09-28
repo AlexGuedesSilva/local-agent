@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent.core.agent import Agent
+from agent.config import Settings
 from agent.llm.client import LLMUnavailableError
 from agent.tools.contracts import ToolResult
 from agent.tools.registry import get_tool
@@ -109,13 +110,61 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
         "read_file",
         "search_workspace",
         "query_database",
+        "edit_file",
         "move_path",
+        "run_command",
+        "search_web",
+        "read_webpage",
     ]
     assert fake_llm.messages_after_tool[-1] == {
         "role": "tool",
         "tool_call_id": "call-1",
         "content": "4",
     }
+
+
+def test_agent_bounds_history_sent_to_model() -> None:
+    agent = Agent(settings=Settings(max_context_chars=1_000))
+    fake_llm = UnavailableThenReadyLLM()
+    agent.llm = fake_llm  # type: ignore[assignment]
+    history = [
+        {"role": "user", "content": f"old-{index}-" + ("x" * 300)}
+        for index in range(8)
+    ]
+
+    assert agent.run("current", history) == "Resposta disponível."
+
+    assert fake_llm.calls == 2  # resumo e resposta do turno atual
+    assert len(agent._bounded_history(history, 1_000)) < len(history)
+
+
+def test_agent_summarizes_old_turns_when_context_is_exceeded() -> None:
+    agent = Agent(settings=Settings(max_context_chars=1_000))
+
+    class SummaryLLM:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        def chat(
+            self,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+        ) -> Any:
+            self.calls.append({"messages": messages, "tools": tools})
+            content = "Resumo da decisão anterior." if tools is None else "Resposta final."
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=content, tool_calls=None))]
+            )
+
+    fake = SummaryLLM()
+    agent.llm = fake  # type: ignore[assignment]
+    history = [{"role": "user", "content": "x" * 1_200}, {"role": "assistant", "content": "decisão"}]
+
+    assert agent.run("Continue", history, summary="") == "Resposta final."
+
+    assert agent.last_summary == "Resumo da decisão anterior."
+    assert fake.calls[0]["tools"] is None
+    assert any("Resumo de turnos anteriores" in str(item.get("content")) for item in fake.calls[1]["messages"])
 
 
 def test_agent_converts_unexpected_tool_exception_and_sends_error_to_llm(
@@ -228,3 +277,71 @@ def test_agent_cancels_move_when_confirmation_is_denied(
     assert (isolated_temp_dir / "note.txt").exists()
     assert not (isolated_temp_dir / "moved.txt").exists()
     assert "cancelada" in fake_llm.messages_after_tool[-1]["content"]
+
+
+def test_agent_shows_diff_and_applies_edit_after_confirmation(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = isolated_temp_dir / "example.py"
+    source.write_text("before\n", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    confirmations: list[str] = []
+    agent = Agent(confirm_action=lambda description: confirmations.append(description) or True)
+    fake_llm = ToolCallingLLM(
+        arguments='{"path":"example.py","old_text":"before","new_text":"after"}',
+        tool_name="edit_file",
+    )
+    agent.llm = fake_llm  # type: ignore[assignment]
+
+    assert agent.run("Troque before por after") == "Done"
+
+    assert "-before" in confirmations[0]
+    assert "+after" in confirmations[0]
+    assert source.read_text(encoding="utf-8") == "after\n"
+    assert "Arquivo atualizado" in fake_llm.messages_after_tool[-1]["content"]
+
+
+def test_agent_keeps_file_unchanged_when_edit_is_not_approved(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = isolated_temp_dir / "example.py"
+    source.write_text("before\n", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    agent = Agent(confirm_action=lambda _description: False)
+    fake_llm = ToolCallingLLM(
+        arguments='{"path":"example.py","old_text":"before","new_text":"after"}',
+        tool_name="edit_file",
+    )
+    agent.llm = fake_llm  # type: ignore[assignment]
+
+    assert agent.run("Troque before por after") == "Done"
+
+    assert source.read_text(encoding="utf-8") == "before\n"
+    assert "cancelada" in fake_llm.messages_after_tool[-1]["content"]
+
+
+def test_agent_shows_command_and_requires_approval_before_running(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    confirmations: list[str] = []
+    command_calls: list[dict[str, Any]] = []
+    agent = Agent(confirm_action=lambda description: confirmations.append(description) or True)
+    fake_llm = ToolCallingLLM(
+        arguments='{"argv":["python","-m","pytest"]}',
+        tool_name="run_command",
+    )
+    agent.llm = fake_llm  # type: ignore[assignment]
+
+    def fake_run(command: list[str], **kwargs: Any) -> Any:
+        command_calls.append({"command": command, **kwargs})
+        return SimpleNamespace(returncode=0, stdout="2 passed\n")
+
+    monkeypatch.setattr("agent.tools.commands.subprocess.run", fake_run)
+
+    assert agent.run("Rode os testes") == "Done"
+
+    assert len(command_calls) == 1
+    assert command_calls[0]["shell"] is False
+    assert "python -m pytest" in confirmations[0]
+    assert "2 passed" in fake_llm.messages_after_tool[-1]["content"]

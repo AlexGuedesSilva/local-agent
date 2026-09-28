@@ -1,10 +1,10 @@
-import os
 from typing import Any
 
 from dotenv import load_dotenv
 import logging
 
 from openai import APIConnectionError, APIStatusError, OpenAI
+from agent.config import Settings
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -17,15 +17,15 @@ class LLMUnavailableError(RuntimeError):
 class LocalLLM:
     """OpenAI-compatible client configured for a local model server."""
 
-    def __init__(self) -> None:
-        timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "120"))
+    def __init__(self, settings: Settings | None = None) -> None:
+        settings = settings or Settings.from_env()
         self.client = OpenAI(
-            base_url=os.getenv("LLM_BASE_URL", "http://localhost:1234/v1"),
-            api_key=os.getenv("LLM_API_KEY", "lm-studio"),
-            timeout=timeout,
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key,
+            timeout=settings.llm_timeout_seconds,
         )
-        self.model = os.getenv("LLM_MODEL")
-        self.temperature = float(os.getenv("LLM_TEMPERATURE", "0.2"))
+        self.model = settings.llm_model
+        self.temperature = settings.llm_temperature
 
     def chat(
         self,

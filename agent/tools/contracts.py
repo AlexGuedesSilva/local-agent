@@ -25,6 +25,9 @@ class Tool(Protocol):
     name: str
     description: str
     parameters: dict[str, Any]
+    requires_confirmation: bool
+    confirmation_preview: Any
+    confirmed_function: Any
 
     def execute(self, **arguments: Any) -> ToolResult: ...
 

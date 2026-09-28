@@ -3,7 +3,14 @@ from pathlib import Path
 import pytest
 
 from agent.tools.contracts import ToolResult
-from agent.tools.filesystem import list_directory, move_path, read_file, search_workspace
+from agent.tools.filesystem import (
+    apply_confirmed_file_edit,
+    list_directory,
+    move_path,
+    preview_file_edit,
+    read_file,
+    search_workspace,
+)
 
 
 def test_lists_workspace_root(
@@ -209,6 +216,19 @@ def test_search_workspace_finds_literal_matches_and_skips_dependencies(
     assert result.data == "src/app.py:1: def Greeting():"
 
 
+def test_search_workspace_reports_skipped_oversized_files(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "large.txt").write_text("x" * 20, encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    monkeypatch.setenv("LOCAL_AGENT_MAX_FILE_BYTES", "10")
+
+    result = search_workspace("needle")
+
+    assert result.success is True
+    assert "1 arquivo(s) foram ignorados" in result.data
+
+
 def test_search_workspace_rejects_escape_paths(
     isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -247,3 +267,73 @@ def test_move_path_refuses_existing_destination_and_escape(
     assert (isolated_temp_dir / "existing.txt").read_text(encoding="utf-8") == "keep"
     assert escape.success is False
     assert (isolated_temp_dir / "source.txt").exists()
+
+
+def test_preview_and_apply_edit_preserve_crlf_and_require_unchanged_source(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = isolated_temp_dir / "source.py"
+    source.write_bytes(b"before\r\nkeep\r\n")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    preview = preview_file_edit("source.py", "before", "after")
+
+    assert preview.success is True
+    assert isinstance(preview.data, dict)
+    assert "-before" in preview.data["diff"]
+    assert "+after" in preview.data["diff"]
+    result = apply_confirmed_file_edit({"path": "source.py"}, preview.data)
+
+    assert result.success is True
+    assert source.read_bytes() == b"after\r\nkeep\r\n"
+
+
+def test_apply_edit_refuses_file_changed_after_review(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = isolated_temp_dir / "source.txt"
+    source.write_text("before", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    preview = preview_file_edit("source.txt", "before", "after")
+    assert isinstance(preview.data, dict)
+    source.write_text("changed by another process", encoding="utf-8")
+
+    result = apply_confirmed_file_edit({"path": "source.txt"}, preview.data)
+
+    assert result.success is False
+    assert "mudou depois da revisão" in (result.error or "")
+    assert source.read_text(encoding="utf-8") == "changed by another process"
+
+
+def test_apply_edit_refuses_change_during_temporary_write(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = isolated_temp_dir / "source.txt"
+    source.write_text("before", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    preview = preview_file_edit("source.txt", "before", "after")
+    assert isinstance(preview.data, dict)
+    original_chmod = __import__("os").chmod
+
+    def change_before_replace(path: Path, mode: int) -> None:
+        source.write_text("concurrent change", encoding="utf-8")
+        original_chmod(path, mode)
+
+    monkeypatch.setattr("agent.tools.filesystem.os.chmod", change_before_replace)
+    result = apply_confirmed_file_edit({"path": "source.txt"}, preview.data)
+
+    assert result.success is False
+    assert "durante a gravação" in (result.error or "")
+    assert source.read_text(encoding="utf-8") == "concurrent change"
+
+
+def test_preview_edit_requires_unique_existing_text(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_temp_dir / "source.txt").write_text("same\nsame\n", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+
+    result = preview_file_edit("source.txt", "same", "replacement")
+
+    assert result.success is False
+    assert "exatamente uma vez" in (result.error or "")

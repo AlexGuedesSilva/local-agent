@@ -1,6 +1,11 @@
+import difflib
+import hashlib
 import os
 import fnmatch
 from pathlib import Path, PurePosixPath, PureWindowsPath
+import stat
+import tempfile
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -11,6 +16,7 @@ _DEFAULT_MAX_FILE_BYTES = 100_000
 _DEFAULT_MAX_SEARCH_FILES = 5_000
 _DEFAULT_MAX_SEARCH_RESULTS = 50
 _DEFAULT_MAX_SEARCH_BYTES = 5_000_000
+_MAX_EDIT_DIFF_CHARS = 30_000
 _SKIPPED_DIRECTORIES = {
     ".git", ".venv", "venv", "node_modules", "__pycache__",
     ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist", "build",
@@ -161,6 +167,7 @@ def search_workspace(
         matches: list[str] = []
         scanned = 0
         total_bytes = 0
+        skipped = 0
         truncated = False
         for directory, dirnames, filenames in os.walk(search_root, followlinks=False):
             dirnames[:] = [name for name in dirnames if name not in _SKIPPED_DIRECTORIES and not name.startswith(".")]
@@ -175,11 +182,14 @@ def search_workspace(
                 try:
                     resolved = candidate.resolve(strict=True)
                     if not resolved.is_relative_to(workspace) or not resolved.is_file():
+                        skipped += 1
                         continue
                     if resolved.stat().st_size > max_bytes:
+                        skipped += 1
                         continue
                     content = resolved.read_bytes()
                     if len(content) > max_bytes:
+                        skipped += 1
                         continue
                     total_bytes += len(content)
                     if total_bytes > max_search_bytes:
@@ -187,6 +197,7 @@ def search_workspace(
                         break
                     text = content.decode("utf-8")
                 except (OSError, RuntimeError, UnicodeDecodeError):
+                    skipped += 1
                     continue
                 rel_path = resolved.relative_to(workspace).as_posix()
                 for line_number, line in enumerate(text.splitlines(), start=1):
@@ -202,10 +213,14 @@ def search_workspace(
                 break
         if not matches:
             message = "Nenhuma ocorrência encontrada nos arquivos analisados."
+            if skipped:
+                message += f" {skipped} arquivo(s) foram ignorados por limite ou formato não suportado."
             if truncated:
                 message += " A busca atingiu um limite; nem todos os arquivos foram verificados."
             return ToolResult.ok(message)
         suffix = "\n(Resultados limitados.)" if truncated else ""
+        if skipped:
+            suffix += f"\n({skipped} arquivo(s) foram ignorados por limite ou formato não suportado.)"
         return ToolResult.ok("\n".join(matches) + suffix)
     except FileNotFoundError:
         return ToolResult.failure("O diretório solicitado não existe.")
@@ -257,3 +272,155 @@ def move_path(source: str, destination: str) -> ToolResult:
         return ToolResult.failure("A origem ou a pasta de destino não existe.")
     except (OSError, RuntimeError, ValueError) as error:
         return ToolResult.failure(f"Não foi possível mover o item: {error}")
+
+
+def preview_file_edit(path: str, old_text: str, new_text: str) -> ToolResult:
+    """Build a bounded unified diff and a fingerprint for a proposed file edit."""
+    prepared = _prepare_file_edit(path, old_text, new_text)
+    if not prepared.success:
+        return prepared
+    assert isinstance(prepared.data, dict)
+    return ToolResult.ok({
+        "diff": prepared.data["diff"],
+        "expected_sha256": prepared.data["expected_sha256"],
+        "new_content": prepared.data["new_content"],
+    })
+
+
+def edit_file(path: str, old_text: str, new_text: str) -> ToolResult:
+    """Replace one exact text occurrence in a workspace file."""
+    prepared = preview_file_edit(path, old_text, new_text)
+    if not prepared.success:
+        return prepared
+    assert isinstance(prepared.data, dict)
+    return apply_confirmed_file_edit(
+        {"path": path},
+        prepared.data,
+    )
+
+
+def apply_confirmed_file_edit(
+    arguments: dict[str, Any], preview: dict[str, Any]
+) -> ToolResult:
+    """Write a reviewed edit only if the source file has not changed."""
+    path = arguments["path"]
+    try:
+        workspace = _workspace_root()
+        relative_path = Path(path)
+        if _has_symlink_component(workspace, relative_path):
+            return ToolResult.failure("Editar arquivos que usam links simbólicos não é permitido.")
+        target = (workspace / relative_path).resolve(strict=True)
+        if not target.is_relative_to(workspace) or not target.is_file():
+            return ToolResult.failure("O arquivo não é um arquivo regular dentro do workspace.")
+        current_bytes = target.read_bytes()
+        current_hash = hashlib.sha256(current_bytes).hexdigest()
+        if current_hash != preview["expected_sha256"]:
+            return ToolResult.failure(
+                "O arquivo mudou depois da revisão. Peça uma nova leitura e gere outro diff."
+            )
+
+        new_content = preview["new_content"].encode("utf-8")
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=target.parent, prefix=f".{target.name}.", suffix=".tmp", delete=False
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                temporary_file.write(new_content)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+            os.chmod(temporary_path, stat.S_IMODE(target.stat().st_mode))
+            latest_bytes = target.read_bytes()
+            if hashlib.sha256(latest_bytes).hexdigest() != preview["expected_sha256"]:
+                return ToolResult.failure(
+                    "O arquivo mudou durante a gravação. A edição foi cancelada; gere outro diff."
+                )
+            os.replace(temporary_path, target)
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink()
+        return ToolResult.ok(f"Arquivo atualizado: {path}")
+    except (KeyError, OSError, RuntimeError, ValueError) as error:
+        return ToolResult.failure(f"Não foi possível aplicar a edição: {error}")
+
+
+def _prepare_file_edit(path: str, old_text: str, new_text: str) -> ToolResult:
+    if (
+        not isinstance(path, str)
+        or not path
+        or "\x00" in path
+        or _is_absolute_or_has_parent(path)
+    ):
+        return ToolResult.failure("Use um caminho relativo ao workspace, sem caminhos absolutos ou '..'.")
+    if not isinstance(old_text, str) or not old_text:
+        return ToolResult.failure("old_text precisa conter o trecho exato a substituir.")
+    if not isinstance(new_text, str):
+        return ToolResult.failure("new_text precisa ser um texto.")
+    if len(old_text) > _DEFAULT_MAX_FILE_BYTES or len(new_text) > _DEFAULT_MAX_FILE_BYTES:
+        return ToolResult.failure("O trecho antigo ou novo excede o limite de edição permitido.")
+
+    try:
+        workspace = _workspace_root()
+        relative_path = Path(path)
+        if _has_symlink_component(workspace, relative_path):
+            return ToolResult.failure("Editar arquivos que usam links simbólicos não é permitido.")
+        target = (workspace / relative_path).resolve(strict=True)
+        if not target.is_relative_to(workspace):
+            return ToolResult.failure("O arquivo solicitado está fora do workspace.")
+        if not target.is_file():
+            return ToolResult.failure("O caminho informado não é um arquivo.")
+
+        max_bytes = int(os.getenv("LOCAL_AGENT_MAX_FILE_BYTES", str(_DEFAULT_MAX_FILE_BYTES)))
+        if max_bytes < 1:
+            return ToolResult.failure("LOCAL_AGENT_MAX_FILE_BYTES deve ser maior que zero.")
+        original_bytes = target.read_bytes()
+        if len(original_bytes) > max_bytes:
+            return ToolResult.failure(f"O arquivo excede o limite de {max_bytes} bytes.")
+        original = original_bytes.decode("utf-8")
+        if (
+            ("\r\n" in original and any(
+                marker in original.replace("\r\n", "") for marker in ("\n", "\r")
+            ))
+            or ("\r" in original and "\r\n" not in original)
+        ):
+            return ToolResult.failure(
+                "O arquivo mistura estilos de quebra de linha; edite-o manualmente para preservar o formato."
+            )
+        newline = "\r\n" if "\r\n" in original else "\n"
+        normalized_original = original.replace("\r\n", "\n").replace("\r", "\n")
+        normalized_old = old_text.replace("\r\n", "\n").replace("\r", "\n")
+        normalized_new = new_text.replace("\r\n", "\n").replace("\r", "\n")
+        if normalized_original.count(normalized_old) != 1:
+            return ToolResult.failure(
+                "O trecho antigo precisa aparecer exatamente uma vez. Leia o arquivo e tente novamente."
+            )
+
+        updated = normalized_original.replace(normalized_old, normalized_new, 1)
+        if len(updated.encode("utf-8")) > max_bytes:
+            return ToolResult.failure(f"O arquivo alterado excederia o limite de {max_bytes} bytes.")
+        diff = "".join(
+            difflib.unified_diff(
+                normalized_original.splitlines(keepends=True),
+                updated.splitlines(keepends=True),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+            )
+        )
+        if not diff:
+            return ToolResult.failure("A alteração proposta não muda o conteúdo do arquivo.")
+        if len(diff) > _MAX_EDIT_DIFF_CHARS:
+            return ToolResult.failure(
+                f"O diff excede {_MAX_EDIT_DIFF_CHARS} caracteres. Faça uma alteração menor."
+            )
+        restored_newlines = updated.replace("\n", newline)
+        return ToolResult.ok({
+            "diff": diff,
+            "expected_sha256": hashlib.sha256(original_bytes).hexdigest(),
+            "new_content": restored_newlines,
+        })
+    except FileNotFoundError:
+        return ToolResult.failure("O arquivo solicitado não existe.")
+    except UnicodeDecodeError:
+        return ToolResult.failure("O arquivo não está codificado em UTF-8.")
+    except (OSError, RuntimeError, ValueError) as error:
+        return ToolResult.failure(f"Não foi possível preparar a edição: {error}")
