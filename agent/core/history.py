@@ -172,6 +172,60 @@ class ConversationHistory:
             for row in rows
         ]
 
+    def search_conversations(
+        self,
+        query: str,
+        limit: int = 5,
+        exclude_conversation_id: str | None = None,
+    ) -> list[dict[str, str]]:
+        """Find bounded excerpts in older user and assistant messages."""
+        normalized_query = query.strip().casefold()
+        if not normalized_query or len(normalized_query) > 200:
+            return []
+        if isinstance(limit, bool) or not 1 <= limit <= 10:
+            return []
+
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT c.conversation_id, c.title, c.updated_at, m.message_json "
+                "FROM conversations AS c JOIN messages AS m "
+                "ON m.conversation_id = c.conversation_id "
+                "WHERE (? IS NULL OR c.conversation_id != ?) "
+                "ORDER BY c.updated_at DESC, m.position DESC LIMIT 10000",
+                (exclude_conversation_id, exclude_conversation_id),
+            ).fetchall()
+
+        matches: list[dict[str, str]] = []
+        seen_conversations: set[str] = set()
+        for row in rows:
+            conversation_id = str(row["conversation_id"])
+            message = json.loads(row["message_json"])
+            if message.get("role") not in {"user", "assistant"}:
+                continue
+            content = message.get("content")
+            if not isinstance(content, str) or normalized_query not in content.casefold():
+                continue
+            if conversation_id in seen_conversations:
+                continue
+            excerpt = " ".join(content.split())
+            if len(excerpt) > 300:
+                match_position = content.casefold().find(normalized_query)
+                start = max(0, match_position - 100)
+                excerpt = "…" + " ".join(content[start : start + 300].split()) + "…"
+            matches.append(
+                {
+                    "conversation_id": conversation_id,
+                    "title": str(row["title"])[:100],
+                    "updated_at": str(row["updated_at"]),
+                    "role": str(message["role"]),
+                    "excerpt": excerpt,
+                }
+            )
+            seen_conversations.add(conversation_id)
+            if len(matches) >= limit:
+                break
+        return matches
+
     def clear_messages(self, conversation_id: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
         with closing(self._connect()) as connection, connection:

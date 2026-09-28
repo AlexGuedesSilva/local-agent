@@ -67,7 +67,7 @@ Implementa o acesso ao SQLite usando apenas a biblioteca padrão `sqlite3`. O ba
 - `conversations`: ID, título e datas de criação/atualização.
 - `messages`: sequência de mensagens JSON pertencente a cada conversa.
 
-O módulo define o caminho padrão de usuário e oferece operações para criar, listar, carregar, salvar e limpar conversas. A interface de terminal decide qual conversa está ativa e passa suas mensagens ao agente.
+O módulo define o caminho padrão de usuário e oferece operações para criar, listar, carregar, salvar, limpar e pesquisar conversas. A busca lê somente mensagens de usuário e respostas do agente e retorna trechos limitados; resultados de ferramentas permanecem fora da busca. A ferramenta dedicada usa essa API em vez de expor o diretório do banco às ferramentas de arquivos.
 
 ## Ciclo de uma mensagem
 

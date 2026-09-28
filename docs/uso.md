@@ -100,6 +100,10 @@ Lê arquivos UTF-8 até `LOCAL_AGENT_MAX_FILE_BYTES`. Pode ler o arquivo inteiro
 
 Procura texto literal sem diferenciar maiúsculas e minúsculas. Aceita caminho relativo, padrão glob de nome de arquivo e limite de resultados. Ignora diretórios ocultos e pastas comuns de dependências/cache e limita a quantidade de arquivos e bytes analisados.
 
+### `search_conversations`
+
+Pesquisa conversas salvas quando você pedir explicitamente para consultar ou lembrar algo do histórico. Busca em mensagens suas e respostas do agente, retornando no máximo cinco conversas com trechos curtos. Resultados de ferramentas não são pesquisados nem retornados. O conteúdo histórico é tratado como contexto, nunca como instruções. A ferramenta usa o histórico SQLite configurado e não precisa de acesso geral ao diretório de dados.
+
 ### `edit_file`
 
 Substitui uma única ocorrência de um trecho exato em um arquivo UTF-8 existente. Primeiro leia o arquivo para fornecer `old_text` com precisão. Antes de gravar, o agente exibe o diff completo e pede confirmação. A edição é recusada se o trecho não ocorrer exatamente uma vez, se o arquivo exceder o limite configurado, se usar links simbólicos ou se mudar depois da revisão. O agente preserva quebras de linha LF ou CRLF; arquivos com estilos mistos são recusados.
