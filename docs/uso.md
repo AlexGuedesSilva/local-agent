@@ -70,6 +70,7 @@ Defina `LOCAL_AGENT_DATA_DIR` para armazenar o banco em outro diretório. O valo
 | --- | --- |
 | `/nova` | Cria uma conversa vazia e passa a usá-la. |
 | `/conversas` | Lista as 20 conversas atualizadas mais recentemente, com ID e título. |
+| `/buscar-conversas TERMO` | Pesquisa mensagens e respostas salvas e mostra até cinco trechos correspondentes. |
 | `/abrir ID` | Carrega uma conversa salva pelo ID mostrado em `/conversas`. |
 | `/limpar` | Apaga as mensagens da conversa atual e mantém a conversa disponível. |
 | `/apagar ID` | Exclui uma conversa e suas mensagens do histórico local. |

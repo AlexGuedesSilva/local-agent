@@ -33,7 +33,10 @@ def main() -> None:
     print("       LOCAL AI AGENT")
     print("=================================")
     print(f"Histórico local: {history_store.database_path}")
-    print("Comandos: /nova, /conversas, /abrir ID, /limpar, /apagar ID, /apagar-tudo, sair\n")
+    print(
+        "Comandos: /nova, /conversas, /buscar-conversas TERMO, /abrir ID, /limpar, "
+        "/apagar ID, /apagar-tudo, sair\n"
+    )
 
     while True:
         user_input = input("Você: ")
@@ -60,6 +63,24 @@ def main() -> None:
                 print(
                     f"{conversation.conversation_id}{active} | {conversation.title} | "
                     f"{conversation.updated_at}"
+                )
+            print()
+            continue
+
+        search_prefix = "/buscar-conversas"
+        if command.casefold() == search_prefix or command.casefold().startswith(search_prefix + " "):
+            query = command[len(search_prefix) :].strip()
+            if not query:
+                print("Uso: /buscar-conversas TERMO\n")
+                continue
+            results = history_store.search_conversations(query, limit=5)
+            if not results:
+                print("Nenhum trecho correspondente foi encontrado nas conversas salvas.\n")
+                continue
+            for result in results:
+                print(
+                    f"{result['conversation_id']} | {result['title']} | {result['role']}: "
+                    f"{result['excerpt']}"
                 )
             print()
             continue
