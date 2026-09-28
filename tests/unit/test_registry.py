@@ -3,6 +3,7 @@ from agent.tools.contracts import ToolResult
 from agent.tools.filesystem import list_directory, move_path, read_file, search_workspace
 from agent.tools.filesystem import edit_file
 from agent.tools.commands import run_command
+from agent.tools.conversations import search_conversations
 from agent.tools.database import query_database
 from agent.tools.registry import get_tool, get_tools_for_llm
 
@@ -17,6 +18,7 @@ def test_get_tool_returns_registered_tools() -> None:
     move_tool = get_tool("move_path")
     edit_tool = get_tool("edit_file")
     command_tool = get_tool("run_command")
+    conversations_tool = get_tool("search_conversations")
 
     assert calculator_tool is not None
     assert time_tool is not None
@@ -45,6 +47,9 @@ def test_get_tool_returns_registered_tools() -> None:
     assert command_tool is not None
     assert command_tool.function is run_command
     assert command_tool.requires_confirmation is True
+    assert conversations_tool is not None
+    assert conversations_tool.function is search_conversations
+    assert conversations_tool.requires_confirmation is False
 
 
 def test_get_tool_returns_none_for_unknown_name() -> None:
@@ -61,6 +66,7 @@ def test_registry_exposes_openai_compatible_tool_metadata() -> None:
         "read_file",
         "search_workspace",
         "query_database",
+        "search_conversations",
         "edit_file",
         "move_path",
         "run_command",
@@ -77,8 +83,9 @@ def test_registry_exposes_openai_compatible_tool_metadata() -> None:
     assert tools[3]["function"]["parameters"]["required"] == ["path"]
     assert tools[4]["function"]["parameters"]["required"] == ["query"]
     assert tools[5]["function"]["parameters"]["required"] == ["query"]
-    assert tools[6]["function"]["parameters"]["required"] == ["path", "old_text", "new_text"]
-    assert tools[7]["function"]["parameters"]["required"] == ["source", "destination"]
-    assert tools[8]["function"]["parameters"]["required"] == ["argv"]
-    assert tools[9]["function"]["parameters"]["required"] == ["query"]
-    assert tools[10]["function"]["parameters"]["required"] == ["url"]
+    assert tools[6]["function"]["parameters"]["required"] == ["query"]
+    assert tools[7]["function"]["parameters"]["required"] == ["path", "old_text", "new_text"]
+    assert tools[8]["function"]["parameters"]["required"] == ["source", "destination"]
+    assert tools[9]["function"]["parameters"]["required"] == ["argv"]
+    assert tools[10]["function"]["parameters"]["required"] == ["query"]
+    assert tools[11]["function"]["parameters"]["required"] == ["url"]

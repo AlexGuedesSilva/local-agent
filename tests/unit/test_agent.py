@@ -110,6 +110,7 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
         "read_file",
         "search_workspace",
         "query_database",
+        "search_conversations",
         "edit_file",
         "move_path",
         "run_command",

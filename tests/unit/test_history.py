@@ -45,6 +45,44 @@ def test_history_can_delete_one_or_all_conversations(tmp_path: Path) -> None:
     assert store.list_conversations() == []
 
 
+def test_search_returns_bounded_excerpts_from_user_and_assistant_only(tmp_path: Path) -> None:
+    store = ConversationHistory(tmp_path / "history.sqlite3")
+    first = store.create_conversation("Projeto de migração")
+    second = store.create_conversation("Outro assunto")
+    store.save_messages(
+        first,
+        [
+            {"role": "user", "content": "Decidimos usar PostgreSQL para o serviço."},
+            {"role": "tool", "content": "PostgreSQL tool output with private details"},
+            {"role": "assistant", "content": "A migração PostgreSQL fica para a próxima etapa."},
+        ],
+        title="Projeto de migração",
+    )
+    store.save_messages(
+        second,
+        [{"role": "user", "content": "Falamos sobre PostgreSQL também."}],
+        title="Outro assunto",
+    )
+
+    results = store.search_conversations("POSTGRESQL", limit=1)
+
+    assert len(results) == 1
+    assert results[0]["conversation_id"] == second
+    assert results[0]["title"] == "Outro assunto"
+    assert results[0]["role"] == "user"
+    assert "private details" not in str(results)
+
+
+def test_search_can_exclude_a_conversation_and_reject_invalid_limits(tmp_path: Path) -> None:
+    store = ConversationHistory(tmp_path / "history.sqlite3")
+    conversation_id = store.create_conversation("Current")
+    store.save_messages(conversation_id, [{"role": "user", "content": "unique phrase"}])
+
+    assert store.search_conversations("unique phrase", exclude_conversation_id=conversation_id) == []
+    assert store.search_conversations("unique phrase", limit=0) == []
+    assert store.search_conversations(" ") == []
+
+
 def test_existing_history_database_is_migrated_with_summary_column(tmp_path: Path) -> None:
     import sqlite3
 
