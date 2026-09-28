@@ -64,6 +64,24 @@ O histórico usa o seguinte diretório padrão:
 
 Defina `LOCAL_AGENT_DATA_DIR` para armazenar o banco em outro diretório. O valor é a pasta, não o nome do arquivo.
 
+### Perfil de verificações do projeto
+
+Crie `.local-agent.json` na raiz do workspace para habilitar testes, lint, formatação e build. Cada verificação é uma lista de argumentos, sem shell; o comando exato é exibido e pede confirmação antes de executar. Os limites são 12 argumentos, 500 caracteres por argumento, 180 segundos e 20.000 caracteres de saída.
+
+```json
+{
+  "name": "meu-projeto",
+  "checks": {
+    "test": ["python", "-m", "pytest"],
+    "lint": ["ruff", "check", "."],
+    "format": ["ruff", "format", "--check", "."],
+    "build": ["python", "-m", "build"]
+  }
+}
+```
+
+No chat, peça ao agente para executar `run_project_check` com `test`, `lint`, `format` ou `build`. Verificações não configuradas ficam indisponíveis.
+
 ## Comandos do terminal
 
 | Comando | Ação |

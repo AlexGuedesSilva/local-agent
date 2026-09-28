@@ -8,6 +8,8 @@ O projeto está em desenvolvimento inicial. O agente oferece um loop de tool cal
 
 As ferramentas de arquivos aceitam somente caminhos relativos ao workspace e rejeitam `..`, caminhos absolutos e destinos resolvidos fora do workspace. A leitura, busca e edição têm limites. O agente pode editar trechos após apresentar um diff e receber confirmação, mover/renomear itens após confirmação e executar uma lista restrita de comandos de desenvolvimento após mostrar o comando e receber confirmação.
 
+Checks específicos de cada projeto podem ser definidos em `.local-agent.json`; o agente mostra a lista exata de argumentos e pede confirmação antes de executar testes, lint, formatação ou build.
+
 A ferramenta PostgreSQL conecta-se ao servidor indicado em `POSTGRES_DSN`, que pode estar em outro computador — por exemplo, no PC que hospeda o LM Studio. Ela aceita uma única consulta `SELECT`/`WITH` dentro de uma transação read-only, com timeout e limite de linhas. Configure um usuário PostgreSQL dedicado com permissões apenas de leitura; a transação read-only é uma proteção adicional, não substitui privilégios mínimos.
 
 A ferramenta `move_path` pode mover ou renomear arquivos e diretórios dentro do workspace. No terminal, o agente mostra origem e destino e exige que o usuário digite `s` para confirmar. Destinos existentes, links simbólicos e caminhos fora do workspace são recusados. A ferramenta não copia nem exclui itens.

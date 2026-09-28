@@ -114,6 +114,7 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
         "edit_file",
         "move_path",
         "run_command",
+        "run_project_check",
         "search_web",
         "read_webpage",
     ]

@@ -1,6 +1,7 @@
 """Validated environment-backed application settings."""
 
 from dataclasses import dataclass
+import json
 import logging
 import os
 from pathlib import Path
@@ -9,6 +10,62 @@ from pathlib import Path
 
 class ConfigurationError(ValueError):
     """Raised when an environment setting is malformed or out of range."""
+
+
+class ProjectProfileError(ValueError):
+    """Raised when a project profile is invalid or unsafe to use."""
+
+
+@dataclass(frozen=True)
+class ProjectProfile:
+    """Small project-local profile with explicitly configured checks."""
+
+    root: Path
+    name: str
+    checks: dict[str, tuple[str, ...]]
+
+    @classmethod
+    def load(cls, root: Path | None = None) -> "ProjectProfile":
+        project_root = (root or workspace_root()).resolve(strict=True)
+        profile_path = project_root / ".local-agent.json"
+        if not profile_path.exists():
+            return cls(root=project_root, name=project_root.name, checks={})
+        try:
+            if profile_path.stat().st_size > 32_000:
+                raise ProjectProfileError(".local-agent.json excede o limite de 32 KB.")
+            data = json.loads(profile_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ProjectProfileError("Não foi possível ler .local-agent.json como JSON UTF-8 válido.") from error
+        if not isinstance(data, dict):
+            raise ProjectProfileError(".local-agent.json deve conter um objeto JSON.")
+        name = data.get("name", project_root.name)
+        checks = data.get("checks", {})
+        if not isinstance(name, str) or not name.strip() or len(name) > 100:
+            raise ProjectProfileError("O nome do projeto precisa conter de 1 a 100 caracteres.")
+        if not isinstance(checks, dict) or any(key not in {"test", "lint", "format", "build"} for key in checks):
+            raise ProjectProfileError("checks aceita somente test, lint, format e build.")
+        validated_checks: dict[str, tuple[str, ...]] = {}
+        for check_name, argv in checks.items():
+            if (
+                not isinstance(argv, list)
+                or not 1 <= len(argv) <= 12
+                or any(
+                    not isinstance(part, str)
+                    or not part
+                    or len(part) > 500
+                    or "\x00" in part
+                    or "\n" in part
+                    or "\r" in part
+                    for part in argv
+                )
+            ):
+                raise ProjectProfileError(f"O comando '{check_name}' deve ser uma lista de 1 a 12 argumentos.")
+            validated_checks[check_name] = tuple(argv)
+        return cls(root=project_root, name=name.strip(), checks=validated_checks)
+
+    def command_for(self, check_name: str) -> tuple[str, ...] | None:
+        """Return one explicitly configured command, if present."""
+        return self.checks.get(check_name)
 
 
 def workspace_root() -> Path:

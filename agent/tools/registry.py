@@ -16,6 +16,11 @@ from agent.tools.filesystem import (
     read_file,
     search_workspace,
 )
+from agent.tools.project_checks import (
+    project_check_confirmation,
+    run_confirmed_project_check,
+    run_project_check,
+)
 from agent.tools.web import read_webpage, search_web
 
 
@@ -220,6 +225,27 @@ _TOOL_DEFINITIONS = (
         function=run_command,
         requires_confirmation=True,
         confirmation_preview=command_confirmation,
+    ),
+    RegisteredTool(
+        name=run_project_check.__name__,
+        description=(
+            "Executa uma verificação nomeada no perfil .local-agent.json do workspace. "
+            "Aceita test, lint, format ou build; exibe o comando exato e pede confirmação."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "check_name": {
+                    "type": "string",
+                    "description": "Verificação configurada: test, lint, format ou build.",
+                }
+            },
+            "required": ["check_name"],
+        },
+        function=run_project_check,
+        requires_confirmation=True,
+        confirmation_preview=project_check_confirmation,
+        confirmed_function=run_confirmed_project_check,
     ),
     RegisteredTool(
         name=search_web.__name__,

@@ -62,7 +62,9 @@ class Agent:
                     "e exigirá confirmação antes de gravar. Para executar testes, use run_command "
                     "com ['python', '-m', 'pytest'] ou um caminho de teste relativo; a aplicação "
                     "mostrará o comando e exigirá confirmação. Também são permitidos ['git', 'status'] "
-                    "e ['git', 'diff']. Não solicite comandos fora dessa lista. "
+                    "e ['git', 'diff']. Para checks do projeto, use run_project_check com um nome "
+                    "configurado em .local-agent.json; a aplicação mostrará o comando e pedirá confirmação. "
+                    "Não solicite comandos fora dessas opções. "
                     "Para consultar dados, use query_database apenas com uma consulta SELECT ou WITH; "
                     "não proponha comandos que alterem o banco."
                     " Para mover ou renomear itens, chame move_path; a aplicação exigirá "
@@ -248,8 +250,13 @@ class Agent:
                     return preview
                 if isinstance(preview.data, dict):
                     preview_data = preview.data
-                    preview_text = str(preview.data.get("diff", ""))
-                    description = f"Editar '{validation.data['path']}'\n\n{preview_text}"
+                    if "diff" in preview.data and "path" in validation.data:
+                        description = (
+                            f"Editar '{validation.data['path']}'\n\n"
+                            f"{preview.data['diff']}"
+                        )
+                    else:
+                        description = str(preview.data.get("description", ""))
                 else:
                     description = str(preview.data)
             elif tool_name == "move_path":
