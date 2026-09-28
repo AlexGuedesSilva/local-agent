@@ -45,6 +45,26 @@ def test_history_can_delete_one_or_all_conversations(tmp_path: Path) -> None:
     assert store.list_conversations() == []
 
 
+def test_history_is_isolated_by_project(tmp_path: Path) -> None:
+    database = tmp_path / "shared.sqlite3"
+    first_project = ConversationHistory(database, project_root=tmp_path / "project-a")
+    second_project = ConversationHistory(database, project_root=tmp_path / "project-b")
+    first_id = first_project.create_conversation("A")
+    second_id = second_project.create_conversation("B")
+    first_project.save_messages(first_id, [{"role": "user", "content": "project A secret"}])
+    second_project.save_messages(second_id, [{"role": "user", "content": "project B secret"}])
+
+    assert first_project.latest_conversation_id() == first_id
+    assert first_project.list_conversations()[0].title == "A"
+    assert first_project.search_conversations("secret")[0]["conversation_id"] == first_id
+    assert first_project.has_conversation(second_id) is False
+    assert first_project.load_messages(second_id) == []
+    assert second_project.latest_conversation_id() == second_id
+
+    assert first_project.delete_all_conversations() == 1
+    assert second_project.has_conversation(second_id) is True
+
+
 def test_search_returns_bounded_excerpts_from_user_and_assistant_only(tmp_path: Path) -> None:
     store = ConversationHistory(tmp_path / "history.sqlite3")
     first = store.create_conversation("Projeto de migração")
@@ -104,6 +124,7 @@ def test_existing_history_database_is_migrated_with_summary_column(tmp_path: Pat
 
     assert store.load_summary("legacy") == ""
     assert store.create_conversation()
+    assert store.has_conversation("legacy") is True
 
 
 def test_agent_appends_tool_exchange_to_persistent_history() -> None:
