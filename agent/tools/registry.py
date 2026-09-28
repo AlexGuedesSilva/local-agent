@@ -19,6 +19,17 @@ from agent.tools.filesystem import (
     read_file,
     search_workspace,
 )
+from agent.tools.git_workflow import (
+    git_commit_changes,
+    git_commit_confirmation,
+    git_create_branch,
+    git_create_branch_confirmation,
+    git_push_branch,
+    git_push_confirmation,
+    git_stage_confirmation,
+    git_stage_paths,
+    run_confirmed_git_action,
+)
 from agent.tools.project_checks import (
     project_check_confirmation,
     run_confirmed_project_check,
@@ -280,6 +291,69 @@ _TOOL_DEFINITIONS = (
         requires_confirmation=True,
         confirmation_preview=project_check_confirmation,
         confirmed_function=run_confirmed_project_check,
+    ),
+    RegisteredTool(
+        name=git_create_branch.__name__,
+        description="Cria uma branch Git local. Mostra o nome e exige confirmação antes da ação.",
+        parameters={
+            "type": "object",
+            "properties": {"branch_name": {"type": "string"}},
+            "required": ["branch_name"],
+        },
+        function=git_create_branch,
+        requires_confirmation=True,
+        confirmation_preview=git_create_branch_confirmation,
+        confirmed_function=run_confirmed_git_action,
+    ),
+    RegisteredTool(
+        name=git_stage_paths.__name__,
+        description=(
+            "Prepara de 1 a 20 arquivos exatos para commit. Lista os caminhos e exige confirmação; "
+            "não usa shell nem aceita diretórios ou links simbólicos."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Caminhos de arquivo relativos ao workspace.",
+                }
+            },
+            "required": ["paths"],
+        },
+        function=git_stage_paths,
+        requires_confirmation=True,
+        confirmation_preview=git_stage_confirmation,
+        confirmed_function=run_confirmed_git_action,
+    ),
+    RegisteredTool(
+        name=git_commit_changes.__name__,
+        description=(
+            "Cria um commit usando apenas as mudanças já preparadas. Exibe o diff preparado e "
+            "a mensagem do commit antes de pedir confirmação."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {"message": {"type": "string"}},
+            "required": ["message"],
+        },
+        function=git_commit_changes,
+        requires_confirmation=True,
+        confirmation_preview=git_commit_confirmation,
+        confirmed_function=run_confirmed_git_action,
+    ),
+    RegisteredTool(
+        name=git_push_branch.__name__,
+        description=(
+            "Envia a branch atual ao remoto origin sem force. Só chame depois de o usuário pedir "
+            "explicitamente para enviar alterações; pede confirmação antes de executar."
+        ),
+        parameters={"type": "object", "properties": {}},
+        function=git_push_branch,
+        requires_confirmation=True,
+        confirmation_preview=git_push_confirmation,
+        confirmed_function=run_confirmed_git_action,
     ),
     RegisteredTool(
         name=search_web.__name__,

@@ -117,6 +117,10 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
         "move_path",
         "run_command",
         "run_project_check",
+        "git_create_branch",
+        "git_stage_paths",
+        "git_commit_changes",
+        "git_push_branch",
         "search_web",
         "read_webpage",
     ]

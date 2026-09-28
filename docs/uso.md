@@ -143,6 +143,10 @@ git diff
 
 O comando é exibido antes da confirmação. Testes opcionais devem apontar para arquivo ou diretório existente dentro do workspace e não podem ser opções de linha de comando. O processo roda na raiz do workspace, não recebe entrada interativa, tem limite de 90 segundos e retorna no máximo 20.000 caracteres de saída.
 
+### Fluxo Git
+
+`git_create_branch` cria uma branch local após confirmação. `git_stage_paths` prepara somente os arquivos nomeados (até 20), sem aceitar diretórios, links ou caminhos fora do workspace. `git_commit_changes` mostra o diff já preparado e a mensagem antes de criar o commit. `git_push_branch` envia a branch atual a `origin`, nunca usa force e exige confirmação; o agente só o chama quando você pedir explicitamente.
+
 ### `query_database`
 
 Consulta o PostgreSQL configurado em `POSTGRES_DSN`. Aceita uma consulta iniciada por `SELECT` ou `WITH`, executa em transação read-only e aplica timeout, limite de linhas e limite de tamanho da resposta.

@@ -5,6 +5,12 @@ from agent.tools.filesystem import edit_file, edit_files
 from agent.tools.commands import run_command
 from agent.tools.conversations import search_conversations
 from agent.tools.project_checks import run_project_check
+from agent.tools.git_workflow import (
+    git_commit_changes,
+    git_create_branch,
+    git_push_branch,
+    git_stage_paths,
+)
 from agent.tools.database import query_database
 from agent.tools.registry import get_tool, get_tools_for_llm
 
@@ -22,6 +28,10 @@ def test_get_tool_returns_registered_tools() -> None:
     command_tool = get_tool("run_command")
     conversations_tool = get_tool("search_conversations")
     project_check_tool = get_tool("run_project_check")
+    branch_tool = get_tool("git_create_branch")
+    stage_tool = get_tool("git_stage_paths")
+    commit_tool = get_tool("git_commit_changes")
+    push_tool = get_tool("git_push_branch")
 
     assert calculator_tool is not None
     assert time_tool is not None
@@ -61,6 +71,14 @@ def test_get_tool_returns_registered_tools() -> None:
     assert project_check_tool.function is run_project_check
     assert project_check_tool.requires_confirmation is True
     assert project_check_tool.confirmation_preview is not None
+    assert branch_tool is not None and branch_tool.function is git_create_branch
+    assert stage_tool is not None and stage_tool.function is git_stage_paths
+    assert commit_tool is not None and commit_tool.function is git_commit_changes
+    assert push_tool is not None and push_tool.function is git_push_branch
+    assert all(
+        tool is not None and tool.requires_confirmation
+        for tool in (branch_tool, stage_tool, commit_tool, push_tool)
+    )
 
 
 def test_get_tool_returns_none_for_unknown_name() -> None:
@@ -83,6 +101,10 @@ def test_registry_exposes_openai_compatible_tool_metadata() -> None:
         "move_path",
         "run_command",
         "run_project_check",
+        "git_create_branch",
+        "git_stage_paths",
+        "git_commit_changes",
+        "git_push_branch",
         "search_web",
         "read_webpage",
     ]
@@ -102,5 +124,9 @@ def test_registry_exposes_openai_compatible_tool_metadata() -> None:
     assert tools[9]["function"]["parameters"]["required"] == ["source", "destination"]
     assert tools[10]["function"]["parameters"]["required"] == ["argv"]
     assert tools[11]["function"]["parameters"]["required"] == ["check_name"]
-    assert tools[12]["function"]["parameters"]["required"] == ["query"]
-    assert tools[13]["function"]["parameters"]["required"] == ["url"]
+    assert tools[12]["function"]["parameters"]["required"] == ["branch_name"]
+    assert tools[13]["function"]["parameters"]["required"] == ["paths"]
+    assert tools[14]["function"]["parameters"]["required"] == ["message"]
+    assert tools[15]["function"]["parameters"]["properties"] == {}
+    assert tools[16]["function"]["parameters"]["required"] == ["query"]
+    assert tools[17]["function"]["parameters"]["required"] == ["url"]
