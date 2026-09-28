@@ -5,9 +5,12 @@ import pytest
 from agent.tools.contracts import ToolResult
 from agent.tools.filesystem import (
     apply_confirmed_file_edit,
+    apply_confirmed_file_edits,
+    edit_files,
     list_directory,
     move_path,
     preview_file_edit,
+    preview_file_edits,
     read_file,
     search_workspace,
 )
@@ -337,3 +340,53 @@ def test_preview_edit_requires_unique_existing_text(
 
     assert result.success is False
     assert "exatamente uma vez" in (result.error or "")
+
+
+def test_multi_file_edit_previews_and_applies_all_changes_after_review(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = isolated_temp_dir / "first.txt"
+    second = isolated_temp_dir / "nested" / "second.txt"
+    second.parent.mkdir()
+    first.write_bytes(b"before one\r\n")
+    second.write_text("before two\n", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    changes = [
+        {"path": "first.txt", "old_text": "before one", "new_text": "after one"},
+        {"path": "nested/second.txt", "old_text": "before two", "new_text": "after two"},
+    ]
+
+    preview = preview_file_edits(changes)
+
+    assert preview.success is True
+    assert "first.txt" in preview.data["description"]
+    assert "second.txt" in preview.data["description"]
+    assert edit_files(changes).success is False
+    result = apply_confirmed_file_edits({"changes": changes}, preview.data)
+
+    assert result.success is True
+    assert first.read_bytes() == b"after one\r\n"
+    assert second.read_text(encoding="utf-8") == "after two\n"
+
+
+def test_multi_file_edit_checks_every_source_before_writing(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = isolated_temp_dir / "first.txt"
+    second = isolated_temp_dir / "second.txt"
+    first.write_text("before one", encoding="utf-8")
+    second.write_text("before two", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    changes = [
+        {"path": "first.txt", "old_text": "before one", "new_text": "after one"},
+        {"path": "second.txt", "old_text": "before two", "new_text": "after two"},
+    ]
+    preview = preview_file_edits(changes)
+    second.write_text("concurrent edit", encoding="utf-8")
+
+    result = apply_confirmed_file_edits({"changes": changes}, preview.data)
+
+    assert result.success is False
+    assert "mudou depois da revisão" in (result.error or "")
+    assert first.read_text(encoding="utf-8") == "before one"
+    assert second.read_text(encoding="utf-8") == "concurrent edit"

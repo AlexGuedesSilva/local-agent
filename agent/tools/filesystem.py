@@ -284,6 +284,7 @@ def preview_file_edit(path: str, old_text: str, new_text: str) -> ToolResult:
         "diff": prepared.data["diff"],
         "expected_sha256": prepared.data["expected_sha256"],
         "new_content": prepared.data["new_content"],
+        "original_content": prepared.data["original_content"],
     })
 
 
@@ -297,6 +298,101 @@ def edit_file(path: str, old_text: str, new_text: str) -> ToolResult:
         {"path": path},
         prepared.data,
     )
+
+
+def preview_file_edits(changes: list[dict[str, str]]) -> ToolResult:
+    """Prepare one bounded diff for a set of distinct workspace files."""
+    if not isinstance(changes, list) or not 1 <= len(changes) <= 10:
+        return ToolResult.failure("Informe de 1 a 10 alterações de arquivo.")
+    items: list[dict[str, str]] = []
+    seen_paths: set[str] = set()
+    diffs: list[str] = []
+    for change in changes:
+        if not isinstance(change, dict) or set(change) != {"path", "old_text", "new_text"}:
+            return ToolResult.failure("Cada alteração precisa conter apenas path, old_text e new_text.")
+        path = change["path"]
+        if not isinstance(path, str):
+            return ToolResult.failure("O caminho de cada alteração precisa ser texto.")
+        normalized_path = os.path.normcase(Path(path).as_posix())
+        if normalized_path in seen_paths:
+            return ToolResult.failure("Cada arquivo pode aparecer somente uma vez na mesma edição.")
+        seen_paths.add(normalized_path)
+        prepared = preview_file_edit(path, change["old_text"], change["new_text"])
+        if not prepared.success:
+            return ToolResult.failure(f"{path}: {prepared.error}")
+        assert isinstance(prepared.data, dict)
+        items.append({"path": path, **prepared.data})
+        diffs.append(str(prepared.data["diff"]))
+    combined_diff = "\n".join(diffs)
+    if len(combined_diff) > _MAX_EDIT_DIFF_CHARS:
+        return ToolResult.failure(
+            f"O diff combinado excede {_MAX_EDIT_DIFF_CHARS} caracteres. Divida em alterações menores."
+        )
+    return ToolResult.ok(
+        {
+            "description": f"Editar {len(items)} arquivo(s) após revisar o diff:\n\n{combined_diff}",
+            "items": items,
+        }
+    )
+
+
+def edit_files(changes: list[dict[str, str]]) -> ToolResult:
+    """Apply several reviewed exact-text edits to workspace files."""
+    return ToolResult.failure("As edições múltiplas precisam passar pela confirmação do agente.")
+
+
+def apply_confirmed_file_edits(
+    arguments: dict[str, Any], preview: dict[str, Any]
+) -> ToolResult:
+    """Apply reviewed edits after checking every source, rolling back on failure."""
+    items = preview.get("items")
+    changes = arguments.get("changes")
+    if not isinstance(items, list) or not isinstance(changes, list) or len(items) != len(changes):
+        return ToolResult.failure("A prévia das edições não corresponde aos argumentos.")
+
+    for change, item in zip(changes, items):
+        if (
+            not isinstance(change, dict)
+            or not isinstance(item, dict)
+            or change.get("path") != item.get("path")
+        ):
+            return ToolResult.failure("A lista de arquivos mudou depois da revisão.")
+        current = preview_file_edit(
+            item["path"], item["original_content"], item["new_content"]
+        )
+        if not current.success or current.data["expected_sha256"] != item["expected_sha256"]:
+            return ToolResult.failure(
+                f"O arquivo '{item['path']}' mudou depois da revisão. Gere um novo diff."
+            )
+
+    applied: list[dict[str, str]] = []
+    for item in items:
+        result = apply_confirmed_file_edit(
+            {"path": item["path"]},
+            {
+                "expected_sha256": item["expected_sha256"],
+                "new_content": item["new_content"],
+            },
+        )
+        if not result.success:
+            rollback_succeeded = True
+            for previous in reversed(applied):
+                rollback = apply_confirmed_file_edit(
+                    {"path": previous["path"]},
+                    {
+                        "expected_sha256": hashlib.sha256(
+                            previous["new_content"].encode("utf-8")
+                        ).hexdigest(),
+                        "new_content": previous["original_content"],
+                    },
+                )
+                rollback_succeeded = rollback.success and rollback_succeeded
+            detail = "As gravações anteriores foram revertidas." if rollback_succeeded else (
+                "Uma gravação falhou e nem todas as alterações anteriores puderam ser revertidas."
+            )
+            return ToolResult.failure(f"{result.error} {detail}")
+        applied.append(item)
+    return ToolResult.ok(f"{len(applied)} arquivo(s) atualizado(s) após confirmação.")
 
 
 def apply_confirmed_file_edit(
@@ -417,6 +513,7 @@ def _prepare_file_edit(path: str, old_text: str, new_text: str) -> ToolResult:
             "diff": diff,
             "expected_sha256": hashlib.sha256(original_bytes).hexdigest(),
             "new_content": restored_newlines,
+            "original_content": original,
         })
     except FileNotFoundError:
         return ToolResult.failure("O arquivo solicitado não existe.")
