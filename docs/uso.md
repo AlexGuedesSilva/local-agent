@@ -77,7 +77,7 @@ Defina `LOCAL_AGENT_DATA_DIR` para armazenar o banco em outro diretório. O valo
 | `/apagar-tudo` | Exclui todas as conversas após confirmação. |
 | `sair` | Encerra o programa. |
 
-Ao iniciar, o agente retoma automaticamente a conversa atualizada mais recentemente. O título de uma conversa é definido a partir da primeira mensagem. Para separar assuntos e evitar carregar contexto irrelevante, use `/nova`.
+Ao iniciar, o agente retoma automaticamente a conversa atualizada mais recentemente do workspace ativo. Os históricos ficam separados pelo caminho resolvido do workspace; o identificador salvo é um hash, não o caminho. Bancos antigos são migrados e as conversas existentes são associadas ao workspace ativo na primeira abertura após a atualização. O título de uma conversa é definido a partir da primeira mensagem. Para separar assuntos e evitar carregar contexto irrelevante, use `/nova`.
 
 ## Ferramentas disponíveis
 

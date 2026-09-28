@@ -3,10 +3,28 @@
 from dataclasses import dataclass
 import logging
 import os
+from pathlib import Path
+from pathlib import Path
 
 
 class ConfigurationError(ValueError):
     """Raised when an environment setting is malformed or out of range."""
+
+
+def workspace_root() -> Path:
+    """Resolve the configured project workspace using the file-tool default."""
+    configured_root = Path(os.getenv("LOCAL_AGENT_WORKSPACE", ".")).expanduser()
+    if not configured_root.is_absolute():
+        configured_root = Path(__file__).resolve().parents[1] / configured_root
+    return configured_root.resolve(strict=True)
+
+
+def workspace_root() -> Path:
+    """Resolve the configured project workspace using the file-tool default."""
+    configured_root = Path(os.getenv("LOCAL_AGENT_WORKSPACE", ".")).expanduser()
+    if not configured_root.is_absolute():
+        configured_root = Path(__file__).resolve().parents[1] / configured_root
+    return configured_root.resolve(strict=True)
 
 
 def _integer(name: str, default: int, minimum: int = 1, maximum: int | None = None) -> int:

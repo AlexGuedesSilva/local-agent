@@ -1,6 +1,7 @@
 """SQLite-backed local conversation history."""
 
 import json
+import hashlib
 import os
 import sqlite3
 import uuid
@@ -10,6 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from agent.config import workspace_root
 
 
 @dataclass(frozen=True)
@@ -38,8 +41,15 @@ def default_history_path() -> Path:
 class ConversationHistory:
     """Persist conversation messages and titles in a local SQLite database."""
 
-    def __init__(self, database_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        database_path: Path | None = None,
+        project_root: Path | None = None,
+    ) -> None:
         self.database_path = database_path or default_history_path()
+        self.project_root = (project_root or workspace_root()).resolve()
+        normalized_root = os.path.normcase(str(self.project_root))
+        self.project_key = hashlib.sha256(normalized_root.encode("utf-8")).hexdigest()[:24]
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection, connection:
             connection.execute(
@@ -50,7 +60,8 @@ class ConversationHistory:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     summary TEXT NOT NULL DEFAULT '',
-                    summary_message_count INTEGER NOT NULL DEFAULT 0
+                    summary_message_count INTEGER NOT NULL DEFAULT 0,
+                    project_key TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
@@ -70,6 +81,16 @@ class ConversationHistory:
                 connection.execute("ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
             if "summary_message_count" not in columns:
                 connection.execute("ALTER TABLE conversations ADD COLUMN summary_message_count INTEGER NOT NULL DEFAULT 0")
+            if "project_key" not in columns:
+                connection.execute("ALTER TABLE conversations ADD COLUMN project_key TEXT NOT NULL DEFAULT ''")
+            connection.execute(
+                "UPDATE conversations SET project_key = ? WHERE project_key = ''",
+                (self.project_key,),
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_conversations_project_updated "
+                "ON conversations (project_key, updated_at DESC)"
+            )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path)
@@ -82,54 +103,62 @@ class ConversationHistory:
         now = datetime.now(timezone.utc).isoformat()
         with closing(self._connect()) as connection, connection:
             connection.execute(
-                "INSERT INTO conversations (conversation_id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (conversation_id, title, now, now),
+                "INSERT INTO conversations "
+                "(conversation_id, title, created_at, updated_at, project_key) VALUES (?, ?, ?, ?, ?)",
+                (conversation_id, title, now, now, self.project_key),
             )
         return conversation_id
 
     def latest_conversation_id(self) -> str | None:
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT conversation_id FROM conversations ORDER BY updated_at DESC LIMIT 1"
+                "SELECT conversation_id FROM conversations WHERE project_key = ? "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (self.project_key,),
             ).fetchone()
         return str(row["conversation_id"]) if row else None
 
     def load_messages(self, conversation_id: str) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection, connection:
             rows = connection.execute(
-                "SELECT message_json FROM messages WHERE conversation_id = ? ORDER BY position",
-                (conversation_id,),
+                "SELECT m.message_json FROM messages AS m JOIN conversations AS c "
+                "ON c.conversation_id = m.conversation_id "
+                "WHERE m.conversation_id = ? AND c.project_key = ? ORDER BY m.position",
+                (conversation_id, self.project_key),
             ).fetchall()
         return [json.loads(row["message_json"]) for row in rows]
 
     def has_conversation(self, conversation_id: str) -> bool:
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT 1 FROM conversations WHERE conversation_id = ?",
-                (conversation_id,),
+                "SELECT 1 FROM conversations WHERE conversation_id = ? AND project_key = ?",
+                (conversation_id, self.project_key),
             ).fetchone()
         return row is not None
 
     def load_summary(self, conversation_id: str) -> str:
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT summary FROM conversations WHERE conversation_id = ?", (conversation_id,)
+                "SELECT summary FROM conversations WHERE conversation_id = ? AND project_key = ?",
+                (conversation_id, self.project_key),
             ).fetchone()
         return str(row["summary"]) if row else ""
 
     def load_context_summary(self, conversation_id: str) -> tuple[str, int]:
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT summary, summary_message_count FROM conversations WHERE conversation_id = ?",
-                (conversation_id,),
+                "SELECT summary, summary_message_count FROM conversations "
+                "WHERE conversation_id = ? AND project_key = ?",
+                (conversation_id, self.project_key),
             ).fetchone()
         return (str(row["summary"]), int(row["summary_message_count"])) if row else ("", 0)
 
     def save_summary(self, conversation_id: str, summary: str, summarized_message_count: int = 0) -> None:
         with closing(self._connect()) as connection, connection:
             connection.execute(
-                "UPDATE conversations SET summary = ?, summary_message_count = ? WHERE conversation_id = ?",
-                (summary, summarized_message_count, conversation_id),
+                "UPDATE conversations SET summary = ?, summary_message_count = ? "
+                "WHERE conversation_id = ? AND project_key = ?",
+                (summary, summarized_message_count, conversation_id, self.project_key),
             )
 
     def save_messages(
@@ -142,9 +171,15 @@ class ConversationHistory:
         with closing(self._connect()) as connection, connection:
             connection.execute(
                 "UPDATE conversations SET title = COALESCE(?, title), updated_at = ? "
-                "WHERE conversation_id = ?",
-                (title, now, conversation_id),
+                "WHERE conversation_id = ? AND project_key = ?",
+                (title, now, conversation_id, self.project_key),
             )
+            exists = connection.execute(
+                "SELECT 1 FROM conversations WHERE conversation_id = ? AND project_key = ?",
+                (conversation_id, self.project_key),
+            ).fetchone()
+            if exists is None:
+                return
             connection.execute(
                 "DELETE FROM messages WHERE conversation_id = ?", (conversation_id,)
             )
@@ -160,8 +195,8 @@ class ConversationHistory:
         with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT conversation_id, title, updated_at FROM conversations "
-                "ORDER BY updated_at DESC LIMIT ?",
-                (limit,),
+                "WHERE project_key = ? ORDER BY updated_at DESC LIMIT ?",
+                (self.project_key, limit),
             ).fetchall()
         return [
             ConversationSummary(
@@ -190,9 +225,9 @@ class ConversationHistory:
                 "SELECT c.conversation_id, c.title, c.updated_at, m.message_json "
                 "FROM conversations AS c JOIN messages AS m "
                 "ON m.conversation_id = c.conversation_id "
-                "WHERE (? IS NULL OR c.conversation_id != ?) "
+                "WHERE c.project_key = ? AND (? IS NULL OR c.conversation_id != ?) "
                 "ORDER BY c.updated_at DESC, m.position DESC LIMIT 10000",
-                (exclude_conversation_id, exclude_conversation_id),
+                (self.project_key, exclude_conversation_id, exclude_conversation_id),
             ).fetchall()
 
         matches: list[dict[str, str]] = []
@@ -230,28 +265,34 @@ class ConversationHistory:
         now = datetime.now(timezone.utc).isoformat()
         with closing(self._connect()) as connection, connection:
             connection.execute(
-                "DELETE FROM messages WHERE conversation_id = ?", (conversation_id,)
+                "DELETE FROM messages WHERE conversation_id = ? AND conversation_id IN "
+                "(SELECT conversation_id FROM conversations WHERE project_key = ?)",
+                (conversation_id, self.project_key),
             )
             connection.execute(
                 "UPDATE conversations SET title = 'Nova conversa', updated_at = ? "
-                "WHERE conversation_id = ?",
-                (now, conversation_id),
+                "WHERE conversation_id = ? AND project_key = ?",
+                (now, conversation_id, self.project_key),
             )
             connection.execute(
-                "UPDATE conversations SET summary = '', summary_message_count = 0 WHERE conversation_id = ?",
-                (conversation_id,),
+                "UPDATE conversations SET summary = '', summary_message_count = 0 "
+                "WHERE conversation_id = ? AND project_key = ?",
+                (conversation_id, self.project_key),
             )
 
     def delete_conversation(self, conversation_id: str) -> bool:
         """Delete one conversation and its messages."""
         with closing(self._connect()) as connection, connection:
             cursor = connection.execute(
-                "DELETE FROM conversations WHERE conversation_id = ?", (conversation_id,)
+                "DELETE FROM conversations WHERE conversation_id = ? AND project_key = ?",
+                (conversation_id, self.project_key),
             )
         return cursor.rowcount > 0
 
     def delete_all_conversations(self) -> int:
         """Delete all conversations and return the number removed."""
         with closing(self._connect()) as connection, connection:
-            cursor = connection.execute("DELETE FROM conversations")
+            cursor = connection.execute(
+                "DELETE FROM conversations WHERE project_key = ?", (self.project_key,)
+            )
         return cursor.rowcount
