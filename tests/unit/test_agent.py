@@ -1,4 +1,5 @@
 from dataclasses import replace
+import json
 from pathlib import Path
 from typing import Any
 from types import SimpleNamespace
@@ -112,6 +113,7 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
         "query_database",
         "search_conversations",
         "edit_file",
+        "edit_files",
         "move_path",
         "run_command",
         "run_project_check",
@@ -320,6 +322,35 @@ def test_agent_keeps_file_unchanged_when_edit_is_not_approved(
 
     assert source.read_text(encoding="utf-8") == "before\n"
     assert "cancelada" in fake_llm.messages_after_tool[-1]["content"]
+
+
+def test_agent_shows_combined_multi_file_diff_before_applying(
+    isolated_temp_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = isolated_temp_dir / "first.txt"
+    second = isolated_temp_dir / "second.txt"
+    first.write_text("old first", encoding="utf-8")
+    second.write_text("old second", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_AGENT_WORKSPACE", str(isolated_temp_dir))
+    changes = [
+        {"path": "first.txt", "old_text": "old first", "new_text": "new first"},
+        {"path": "second.txt", "old_text": "old second", "new_text": "new second"},
+    ]
+    confirmations: list[str] = []
+    agent = Agent(confirm_action=lambda description: confirmations.append(description) or True)
+    fake_llm = ToolCallingLLM(
+        arguments=json.dumps({"changes": changes}),
+        tool_name="edit_files",
+    )
+    agent.llm = fake_llm  # type: ignore[assignment]
+
+    assert agent.run("Atualize os dois arquivos") == "Done"
+
+    assert "Editar 2 arquivo(s)" in confirmations[0]
+    assert "-old first" in confirmations[0]
+    assert "+new second" in confirmations[0]
+    assert first.read_text(encoding="utf-8") == "new first"
+    assert second.read_text(encoding="utf-8") == "new second"
 
 
 def test_agent_shows_command_and_requires_approval_before_running(

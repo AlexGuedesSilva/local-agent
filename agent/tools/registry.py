@@ -9,10 +9,13 @@ from agent.tools.conversations import search_conversations
 from agent.tools.database import query_database
 from agent.tools.filesystem import (
     apply_confirmed_file_edit,
+    apply_confirmed_file_edits,
     edit_file,
+    edit_files,
     list_directory,
     move_path,
     preview_file_edit,
+    preview_file_edits,
     read_file,
     search_workspace,
 )
@@ -185,6 +188,37 @@ _TOOL_DEFINITIONS = (
         requires_confirmation=True,
         confirmation_preview=preview_file_edit,
         confirmed_function=apply_confirmed_file_edit,
+    ),
+    RegisteredTool(
+        name=edit_files.__name__,
+        description=(
+            "Propõe alterações exatas em até dez arquivos do workspace em uma única revisão. "
+            "Mostra o diff combinado e exige confirmação antes de gravar; arquivos alterados após a revisão são recusados."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "changes": {
+                    "type": "array",
+                    "description": "De 1 a 10 arquivos distintos com path, old_text e new_text.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "old_text": {"type": "string"},
+                            "new_text": {"type": "string"},
+                        },
+                        "required": ["path", "old_text", "new_text"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["changes"],
+        },
+        function=edit_files,
+        requires_confirmation=True,
+        confirmation_preview=preview_file_edits,
+        confirmed_function=apply_confirmed_file_edits,
     ),
     RegisteredTool(
         name=move_path.__name__,

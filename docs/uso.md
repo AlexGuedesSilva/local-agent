@@ -127,6 +127,10 @@ Pesquisa conversas salvas quando você pedir explicitamente para consultar ou le
 
 Substitui uma única ocorrência de um trecho exato em um arquivo UTF-8 existente. Primeiro leia o arquivo para fornecer `old_text` com precisão. Antes de gravar, o agente exibe o diff completo e pede confirmação. A edição é recusada se o trecho não ocorrer exatamente uma vez, se o arquivo exceder o limite configurado, se usar links simbólicos ou se mudar depois da revisão. O agente preserva quebras de linha LF ou CRLF; arquivos com estilos mistos são recusados.
 
+### `edit_files`
+
+Aplica alterações exatas em até dez arquivos distintos após exibir um diff combinado e pedir uma única confirmação. Todos os arquivos são conferidos antes da primeira gravação; se uma gravação falhar, o agente tenta reverter as anteriores sem sobrescrever uma edição concorrente.
+
 ### `run_command`
 
 Executa somente os comandos de desenvolvimento permitidos abaixo, usando uma lista de argumentos e sem shell:
