@@ -53,6 +53,8 @@ Copie `.env.example` para `.env` e ajuste os valores. Inicie o servidor local, c
 | `LOCAL_AGENT_DATA_DIR` | `%LOCALAPPDATA%\LocalAgent` no Windows | Diretório local para o banco SQLite do histórico. No Linux/macOS, usa `XDG_DATA_HOME/local-agent` ou `~/.local/share/local-agent`. |
 | `LOCAL_AGENT_MAX_FILE_BYTES` | `100000` | Tamanho máximo de arquivo que a ferramenta pode ler. |
 | `LOCAL_AGENT_MAX_SEARCH_BYTES` | `5000000` | Máximo de bytes lidos em uma busca no workspace. |
+| `LOCAL_AGENT_MAX_IAC_BYTES` | `2000000` | Tamanho máximo do export JSON do Skyone IAC aceito para documentação. |
+| `LOCAL_AGENT_SKYONE_TEMPLATE` | (vazio; recurso desativado) | Caminho relativo, dentro do workspace, para o modelo DOCX de especificação a preencher. |
 | `LOCAL_AGENT_MAX_ITERATIONS` | `10` | Máximo de ciclos de resposta/chamadas de ferramenta por entrada. |
 | `LOCAL_AGENT_MAX_CONTEXT_CHARS` | `60000` | Limite aproximado do histórico enviado ao modelo; o histórico salvo continua completo. |
 | `LOCAL_AGENT_LOG_LEVEL` | `WARNING` | Nível de log (`DEBUG`, `INFO`, `WARNING` ou `ERROR`). |
@@ -64,6 +66,8 @@ Copie `.env.example` para `.env` e ajuste os valores. Inicie o servidor local, c
 As variáveis numéricas devem conter números válidos; `LOCAL_AGENT_MAX_FILE_BYTES` precisa ser maior que zero. O PostgreSQL permanece desativado se `POSTGRES_DSN` estiver vazio.
 
 Para habilitar a busca na web, configure `BRAVE_SEARCH_API_KEY` no `.env`. Consultas são enviadas à Brave Search API; páginas lidas são acessadas pelo computador local. O leitor aceita páginas públicas HTTP/HTTPS, bloqueia endereços locais/privados e limita redirecionamentos, bytes e texto retornado.
+
+Para documentar um fluxo Skyone Studio, coloque o export IAC JSON e o modelo `.docx` dentro do workspace e configure `LOCAL_AGENT_SKYONE_TEMPLATE` com o caminho relativo do modelo. Peça ao agente para preencher o modelo com o export (por exemplo, `fluxo.json`); ele propõe um novo arquivo `fluxo_documentacao.docx`, nunca sobrescreve arquivos existentes e exige confirmação antes de gravar. A análise extrai informações presentes nos módulos do IAC, marca lacunas e inferências para revisão e preserva o conteúdo de referência do modelo. O IAC é tratado como dado, não como instruções. O gerador inicial suporta o modelo Lindt fornecido e exports JSON de módulos do Skyone Studio.
 
 ## Uso
 

@@ -115,6 +115,7 @@ def test_agent_sends_successful_tool_result_to_llm() -> None:
         "edit_file",
         "edit_files",
         "move_path",
+        "fill_skyone_iac_template",
         "run_command",
         "run_project_check",
         "git_create_branch",

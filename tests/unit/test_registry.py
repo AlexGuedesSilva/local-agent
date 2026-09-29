@@ -12,6 +12,7 @@ from agent.tools.git_workflow import (
     git_stage_paths,
 )
 from agent.tools.database import query_database
+from agent.tools.iac_documentation import fill_skyone_iac_template
 from agent.tools.registry import get_tool, get_tools_for_llm
 
 
@@ -23,6 +24,7 @@ def test_get_tool_returns_registered_tools() -> None:
     search_tool = get_tool("search_workspace")
     database_tool = get_tool("query_database")
     move_tool = get_tool("move_path")
+    iac_tool = get_tool("fill_skyone_iac_template")
     edit_tool = get_tool("edit_file")
     edit_files_tool = get_tool("edit_files")
     command_tool = get_tool("run_command")
@@ -53,6 +55,10 @@ def test_get_tool_returns_registered_tools() -> None:
     assert move_tool is not None
     assert move_tool.function is move_path
     assert getattr(move_tool, "requires_confirmation") is True
+    assert iac_tool is not None
+    assert iac_tool.function is fill_skyone_iac_template
+    assert iac_tool.requires_confirmation is True
+    assert iac_tool.confirmation_preview is not None
     assert edit_tool is not None
     assert edit_tool.function is edit_file
     assert edit_tool.requires_confirmation is True
@@ -99,6 +105,7 @@ def test_registry_exposes_openai_compatible_tool_metadata() -> None:
         "edit_file",
         "edit_files",
         "move_path",
+        "fill_skyone_iac_template",
         "run_command",
         "run_project_check",
         "git_create_branch",
@@ -122,11 +129,12 @@ def test_registry_exposes_openai_compatible_tool_metadata() -> None:
     assert tools[7]["function"]["parameters"]["required"] == ["path", "old_text", "new_text"]
     assert tools[8]["function"]["parameters"]["required"] == ["changes"]
     assert tools[9]["function"]["parameters"]["required"] == ["source", "destination"]
-    assert tools[10]["function"]["parameters"]["required"] == ["argv"]
-    assert tools[11]["function"]["parameters"]["required"] == ["check_name"]
-    assert tools[12]["function"]["parameters"]["required"] == ["branch_name"]
-    assert tools[13]["function"]["parameters"]["required"] == ["paths"]
-    assert tools[14]["function"]["parameters"]["required"] == ["message"]
-    assert tools[15]["function"]["parameters"]["properties"] == {}
-    assert tools[16]["function"]["parameters"]["required"] == ["query"]
-    assert tools[17]["function"]["parameters"]["required"] == ["url"]
+    assert tools[10]["function"]["parameters"]["required"] == ["source_path"]
+    assert tools[11]["function"]["parameters"]["required"] == ["argv"]
+    assert tools[12]["function"]["parameters"]["required"] == ["check_name"]
+    assert tools[13]["function"]["parameters"]["required"] == ["branch_name"]
+    assert tools[14]["function"]["parameters"]["required"] == ["paths"]
+    assert tools[15]["function"]["parameters"]["required"] == ["message"]
+    assert tools[16]["function"]["parameters"]["properties"] == {}
+    assert tools[17]["function"]["parameters"]["required"] == ["query"]
+    assert tools[18]["function"]["parameters"]["required"] == ["url"]

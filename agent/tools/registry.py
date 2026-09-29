@@ -30,6 +30,10 @@ from agent.tools.git_workflow import (
     git_stage_paths,
     run_confirmed_git_action,
 )
+from agent.tools.iac_documentation import (
+    fill_skyone_iac_template,
+    iac_documentation_confirmation,
+)
 from agent.tools.project_checks import (
     project_check_confirmation,
     run_confirmed_project_check,
@@ -248,6 +252,25 @@ _TOOL_DEFINITIONS = (
         },
         function=move_path,
         requires_confirmation=True,
+    ),
+    RegisteredTool(
+        name=fill_skyone_iac_template.__name__,
+        description=(
+            "Preenche uma cópia do modelo DOCX configurado em LOCAL_AGENT_SKYONE_TEMPLATE "
+            "com dados de um export JSON do Skyone Studio IAC. Arquivos devem estar no workspace; "
+            "não sobrescreve saídas e exige confirmação. Marca inferências e dados ausentes para revisão."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "source_path": {"type": "string", "description": "Caminho relativo do export JSON IAC."},
+                "output_path": {"type": "string", "description": "Caminho relativo opcional do novo DOCX."},
+            },
+            "required": ["source_path"],
+        },
+        function=fill_skyone_iac_template,
+        requires_confirmation=True,
+        confirmation_preview=iac_documentation_confirmation,
     ),
     RegisteredTool(
         name=run_command.__name__,
